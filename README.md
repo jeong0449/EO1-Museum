@@ -112,6 +112,6 @@ EO1-Museum is still a work in progress. The current version focuses on restoring
 - **Exhibition modes** — make it easier to create themed exhibitions based on artists, periods, cultures, subjects, or other metadata.
 - **Additional museum collections** — extend the downloader and gallery system to other museums that provide open-access images and metadata.
 - **Local collections** — allow personal photographs or locally curated image collections to be mixed with museum artworks.
-- **More independent operation** — reduce the amount of manual interaction required on the PC and make the EO1 behave more like a self-contained digital museum display.
+- **More independent operation** — reduce the amount of manual interaction required on the PC and make the EO1 behave more like a self-contained digital museum display. One experimental direction is to boot Linux directly from a USB flash drive and run EO1-Museum locally, potentially eliminating the need for both an external PC and Wi-Fi. See [Experimental Linux USB Boot](docs/LINUX_USB_BOOT.md) for background, previous work, and a proposed test procedure.
 
 The goal is not to turn the EO1 into a modern tablet, but to preserve its distinctive portrait display and give it a useful second life as a quiet, dedicated window into art.
