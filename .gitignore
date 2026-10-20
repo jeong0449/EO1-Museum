@@ -1,0 +1,26 @@
+# Downloaded original artwork
+original/*
+!original/.gitkeep
+
+# Generated display images
+display/*
+!display/.gitkeep
+
+# The Met Open Access dataset
+MetObjects.csv
+
+# Current exhibition metadata
+met_metadata.json
+
+# Local development archive
+archive/
+
+# Generated gallery image list
+images.js
+
+# Android Studio / Gradle
+.gradle/
+.idea/
+**/build/
+*.iml
+local.properties

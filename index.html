@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>EO1 Gallery</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  overflow: hidden; background: #000;
+}
+#photo {
+  position: absolute; left: 0; top: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+</style>
+<script src="images.js?v=2"></script>
+</head>
+<body>
+<img id="photo" alt="">
+<script>
+(function () {
+  var delay = 15000;  // 30 seconds
+  var order = [];
+  var pos = 0;
+  var img = document.getElementById("photo");
+
+  function shuffle() {
+    var i, j, t;
+    order = images.slice(0);
+    for (i = order.length - 1; i > 0; i--) {
+      j = Math.floor(Math.random() * (i + 1));
+      t = order[i]; order[i] = order[j]; order[j] = t;
+    }
+    pos = 0;
+  }
+
+  function next() {
+    if (!images || images.length === 0) return;
+    if (pos >= order.length) shuffle();
+    img.src = order[pos] + "?v=" + new Date().getTime();
+    pos++;
+  }
+
+  if (typeof images !== "undefined" && images.length > 0) {
+    shuffle();
+    next();
+    setInterval(next, delay);
+  }
+})();
+</script>
+</body>
+</html>
