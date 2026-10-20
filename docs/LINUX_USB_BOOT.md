@@ -2,9 +2,11 @@
 
 > **Status: Experimental**
 >
-> Linux has previously been booted successfully on an Electric Objects EO1 from a USB flash drive, but the procedure described here has **not yet been reproduced as part of the EO1-Museum project**.
+> Linux has previously been booted successfully on an Electric Objects EO1 from a USB flash drive. However, attempts to reproduce USB booting as part of the EO1-Museum project on **20 October 2026** were unsuccessful. Both a **Yocto Hardknott Nitrogen6X image** and an **Ubuntu Bionic XFCE ARMHF Nitrogen6X image** were tested, using direct USB OTG connection as well as a powered USB hub. In every case, the EO1 ignored the USB image and booted its original Android system normally.
 >
-> The existing Android installation and internal eMMC should be preserved until the USB boot process has been fully understood and tested.
+> These results do not establish that USB Linux booting is impossible on the EO1, but they suggest that differences in bootloader configuration, image compatibility, or EO1 firmware may be involved. The detailed test record is provided in **Section 10.1**.
+>
+> The existing Android installation and internal eMMC were not modified during these experiments and should be preserved while the USB boot mechanism remains unresolved.
 
 ## 1. Why boot Linux on the EO1?
 
@@ -485,6 +487,65 @@ Important unanswered questions include:
 Harrington's successful experiment strongly suggests that the factory EO1 boot environment can boot an appropriately prepared USB device.
 
 However, the exact mechanism still needs to be documented.
+
+### 10.1 Experiment log — 20 October 2026
+
+The first EO1-Museum attempts to reproduce USB Linux booting were carried out on **20 October 2026**. The purpose was simply to determine whether the existing EO1 bootloader would select a prepared USB Linux image. The internal eMMC and the working Android/MetBoot installation were not modified.
+
+Two Nitrogen6X-compatible Linux images were tested.
+
+#### Test 1 — Yocto Hardknott
+
+The first image tested was:
+
+    20210922-boundary-image-multimedia-full-nitrogen6x.wic.gz
+
+This is the Yocto Hardknott image described earlier in this document. The image was written to an **8 GB USB flash drive** using balenaEtcher, including the verification step.
+
+The following configurations were tested:
+
+    Yocto USB connected directly through OTG  → Android booted normally
+    Yocto USB connected through powered hub   → Android booted normally
+
+In both cases, the EO1 ignored the USB Linux image and proceeded to boot its original Android system. No Linux boot screen or boot menu appeared.
+
+#### Test 2 — Ubuntu Bionic XFCE ARMHF
+
+A second experiment used the following Ubuntu image:
+
+    20220204-nitrogen6x-4.14.x_2.0.1_ga-bionic-en_US-xfce_armhf.img.gz
+
+The image was written to a **32 GB USB flash drive**. After flashing, Windows Disk Management showed an image-created partition of approximately 3.5 GB, with the remaining space left unallocated. No attempt was made to resize or modify the partitions.
+
+The following configurations were tested:
+
+    Ubuntu USB connected directly through OTG       → Android booted normally
+    Ubuntu USB + powered hub + keyboard              → Android booted normally
+    Repeated Space/Enter key presses during startup  → no visible effect
+
+Again, the EO1 continued to boot Android normally. No Linux boot screen or interactive bootloader prompt appeared.
+
+#### Summary
+
+The results of the experiment were therefore:
+
+    Yocto USB direct              → Android
+    Yocto USB + powered hub       → Android
+    Ubuntu Bionic USB direct      → Android
+    Ubuntu + powered hub+keyboard → Android
+    boot-time keypress            → no visible effect
+
+These results do **not** demonstrate that USB Linux booting is impossible on the EO1. Charlie Harrington's 2022 experiment remains direct evidence that at least one EO1 could boot Linux from a USB flash drive.
+
+They do show, however, that simply flashing the tested Nitrogen6X images to USB was insufficient on this particular EO1.
+
+One possible explanation is a mismatch between the EO1's factory U-Boot environment and the boot scripts or partition layout expected by these later Boundary Devices images. Differences in firmware or bootloader versions between EO1 units are also possible. These possibilities have not been verified.
+
+Further diagnosis would probably require identifying the installed U-Boot version and boot environment, potentially through a serial/UART console. This would require substantially deeper hardware investigation and may involve opening the EO1 and locating or soldering to serial test points. For the present EO1-Museum project, this is considered beyond the desired scope.
+
+Importantly, the internal eMMC was not modified during any of these tests. After each experiment, the EO1 continued to boot normally into the existing Android/MetBoot/Firefox environment.
+
+For now, the working Android-based EO1-Museum configuration therefore remains the known-good platform, while Linux USB boot is retained as a documented experimental path rather than an immediate development target.
 
 ---
 
