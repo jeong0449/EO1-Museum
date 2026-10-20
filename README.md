@@ -81,6 +81,14 @@ EO1-Museum builds on ideas explored in these earlier projects, combining direct 
 
 Many thanks to Darius Kazemi and Christian Boyle for documenting their work and helping make it possible to give these devices a second life.
 
+### Running Linux on the EO1 — Charlie Harrington
+
+In 2022, [Charlie Harrington](https://charlieharrington.com/run-linux-on-electric-objects-eo1-wall-computer/) demonstrated another approach to repurposing the EO1: booting Linux directly from a USB flash drive. After identifying the EO1 hardware as being closely related to a Boundary Devices i.MX6 platform, he used a Linux build for the Boundary Devices hardware and connected the USB drive, keyboard, and mouse through a powered USB hub and the EO1's micro-USB OTG port.
+
+This approach bypasses the original Android environment without requiring it to be erased from the internal storage, effectively turning the EO1 into a small portrait-oriented ARM Linux computer. Harrington used the system to automatically download and display the New York Times front page and later explored remote administration over SSH.
+
+This work suggests another possible direction for EO1-Museum: a future standalone Linux-based version that could run the gallery software directly on the EO1 without depending on a separate PC.
+
 ## Future Development
 
 EO1-Museum is still a work in progress. The current version focuses on restoring the EO1 as a simple and reliable digital museum display, but several improvements are planned or being considered.
