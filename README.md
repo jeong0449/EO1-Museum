@@ -2,6 +2,18 @@
 
 EO1-Museum brings an Electric Objects EO1 back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
 
+<p align="center">
+  <img src="sample.jpg" width="400" alt="Édouard Manet, Peonies, displayed on the EO1">
+</p>
+
+<p align="center">
+  <em>
+    Édouard Manet, <strong>Peonies</strong>, 1864–65, oil on canvas,
+    The Metropolitan Museum of Art — displayed on an Electric Objects EO1
+    using EO1-Museum.
+  </em>
+</p>
+
 The basic workflow is:
 
 ```text
