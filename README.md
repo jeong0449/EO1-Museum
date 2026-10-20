@@ -28,6 +28,8 @@ Artwork collection, selection, image processing, and web serving are handled by 
 
 For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the museum gallery, see the [Installation Guide](INSTALL.md).
 
+A prebuilt `MetBoot.apk` is included in the repository root for direct installation on the EO1. The complete Android Studio source code is also provided in the `MetBoot/` directory.
+
 Once configured, the EO1 requires only power and a Wi-Fi connection for normal operation. When the EO1 boots, **MetBoot** automatically launches Firefox, which opens the EO1-Museum gallery served by the PC on the local network.
 
 For normal operation, three Windows batch files are provided:
