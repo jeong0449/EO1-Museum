@@ -80,3 +80,18 @@ It builds on the same basic access method—USB OTG, keyboard and mouse, and the
 EO1-Museum builds on ideas explored in these earlier projects, combining direct access to the EO1, a Firefox-based web display, automatic startup through MetBoot, and a local gallery system for curating and displaying open-access museum collections.
 
 Many thanks to Darius Kazemi and Christian Boyle for documenting their work and helping make it possible to give these devices a second life.
+
+## Future Development
+
+EO1-Museum is still a work in progress. The current version focuses on restoring the EO1 as a simple and reliable digital museum display, but several improvements are planned or being considered.
+
+- **True fullscreen display** — remove the remaining Firefox browser interface and borders, possibly by extending MetBoot to provide a dedicated fullscreen WebView or launcher.
+- **Artwork information** — optionally display the title, artist, date, medium, and other metadata together with each artwork.
+- **Landscape artwork presentation** — provide a better way to display wide landscape-oriented works on the portrait EO1 screen, for example by slowly panning the image horizontally instead of shrinking the entire work to fit.
+- **Improved transitions** — add simple fades or other unobtrusive transitions between artworks.
+- **Exhibition modes** — make it easier to create themed exhibitions based on artists, periods, cultures, subjects, or other metadata.
+- **Additional museum collections** — extend the downloader and gallery system to other museums that provide open-access images and metadata.
+- **Local collections** — allow personal photographs or locally curated image collections to be mixed with museum artworks.
+- **More independent operation** — reduce the amount of manual interaction required on the PC and make the EO1 behave more like a self-contained digital museum display.
+
+The goal is not to turn the EO1 into a modern tablet, but to preserve its distinctive portrait display and give it a useful second life as a quiet, dedicated window into art.
