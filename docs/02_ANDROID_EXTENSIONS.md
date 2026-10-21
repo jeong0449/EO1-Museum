@@ -967,6 +967,20 @@ No separate `su` step was required.
 
 This changes the practical development environment considerably. The EO1 can now be inspected and tested over Wi-Fi while its USB port remains available, and future APK installation and diagnostics can be performed through ADB without repeatedly using the browser-based installation route.
 
+#### Persistence across reboot
+
+Wireless ADB was found to be temporary in the current configuration. After the EO1 was rebooted, the device was no longer reachable over TCP/IP without first reconnecting it to the PC through USB and issuing:
+
+    adb -s 115343222 tcpip 5555
+
+After this command, the USB cable could again be removed and the EO1 could be reached over Wi-Fi:
+
+    adb connect 192.168.1.105:5555
+
+This indicates that the `adb tcpip 5555` setting does not persist across a normal reboot in the current EO1 configuration.
+
+For development this is only a minor inconvenience, but persistent wireless ADB could later be investigated, particularly because the EO1 ADB shell already runs with root privileges. No persistent system modification is required at this stage.
+
 ### 25.2 USB mass-storage diagnosis
 
 With wireless ADB active, a USB flash drive was connected to the EO1 through OTG.
