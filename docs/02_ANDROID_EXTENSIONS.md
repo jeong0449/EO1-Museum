@@ -1,6 +1,6 @@
 # Extending the Original Android Environment on the Electric Objects EO1
 
-> **Status: Experimental / Planning**
+> **Status: Experimental / Active testing**
 >
 > EO1-Museum currently operates successfully using the original Android 4.4 environment, MetBoot, Firefox, and a local web server running on an external PC.
 >
@@ -912,5 +912,167 @@ The USB-storage experiment will determine whether the artwork itself can also re
 Even if USB storage proves unavailable, replacing Firefox with a native Android application could still substantially simplify EO1-Museum and provide better control over fullscreen presentation, metadata, brightness, hardware buttons, slideshow behavior, and landscape artwork.
 
 The important principle remains the same as in the Linux experiment:
+
+> **Preserve the working EO1 first; extend it only through reversible experiments.**
+
+---
+
+## 25. Experiment results — 21 October 2026
+
+Two important results were obtained during the Android-extension experiments: **wireless root ADB was successfully established**, and the reason conventional USB mass storage does not work under the stock EO1 Android kernel was identified.
+
+### 25.1 Wireless ADB and root shell
+
+The initial obstacle was ADB authorization. When the EO1 was connected directly to the PC, ADB detected the device but reported it as:
+
+    unauthorized
+
+Android displayed the standard dialog:
+
+    Allow USB debugging?
+    [ ] Always allow from this computer
+    CANCEL    OK
+
+The difficulty was physical rather than cryptographic. The EO1 has only one micro-USB port. When that port was connected to the PC for ADB, the OTG mouse could not simultaneously be used to click the authorization dialog. A Bluetooth mouse was successfully paired with the EO1, but it did not provide usable pointer input.
+
+A small experimental Android application, **ADB Approval Helper**, was therefore created. It uses an Android `AccessibilityService` and acts only when the `com.android.systemui` window contains the exact text:
+
+    Always allow from this computer
+
+The service then attempts to check that option and click the `OK` button.
+
+The APK was downloaded to the EO1 through the existing local HTTP server, installed using the OTG mouse, and its Accessibility Service was enabled. After the OTG connection was removed and the EO1 was connected directly to the PC, the helper successfully approved the USB-debugging authorization dialog.
+
+ADB then reported the EO1 as an authorized device.
+
+While the USB connection was still active, ADB was switched to TCP mode:
+
+    adb -s 115343222 tcpip 5555
+
+which returned:
+
+    restarting in TCP mode port: 5555
+
+After removing the USB cable, ADB successfully reconnected over Wi-Fi:
+
+    adb connect 192.168.1.105:5555
+
+This freed the physical micro-USB port for OTG experiments while retaining an ADB shell from the PC.
+
+An additional and particularly useful discovery was that the EO1 ADB shell is already running with root privileges:
+
+    uid=0(root) gid=0(root) context=u:r:shell:s0
+
+No separate `su` step was required.
+
+This changes the practical development environment considerably. The EO1 can now be inspected and tested over Wi-Fi while its USB port remains available, and future APK installation and diagnostics can be performed through ADB without repeatedly using the browser-based installation route.
+
+### 25.2 USB mass-storage diagnosis
+
+With wireless ADB active, a USB flash drive was connected to the EO1 through OTG.
+
+No new block device appeared in `/proc/partitions`. In particular, no `sda` or `sda1` device was created.
+
+Kernel messages nevertheless showed that the USB host controller detected and enumerated the flash drive:
+
+    ehci_fsl_bus_resume begins, DR
+    ehci_fsl_bus_resume ends, DR
+    usb 1-1: new high speed USB device number 7 using fsl-ehci
+    usb 1-1: device v23a9 pef18 is not supported
+
+The device was also present in sysfs. Its identifiers were:
+
+    idVendor:           23a9
+    idProduct:          ef18
+    bDeviceClass:       00
+    bNumConfigurations: 1
+
+The USB interface `1-1:1.0` was successfully created. Its interface descriptors were:
+
+    bInterfaceClass:     08
+    bInterfaceSubClass:  06
+    bInterfaceProtocol:  50
+
+These values identify a conventional USB Mass Storage device using the SCSI transparent command set and Bulk-Only Transport.
+
+The failure therefore occurs after USB enumeration but before creation of a usable SCSI block device.
+
+Inspection of `/sys/bus/usb/drivers/` showed drivers such as `usbhid`, but no `usb-storage` driver. No loadable kernel modules were found under `/system/lib/modules`.
+
+Finally, the running kernel configuration was retrieved from `/proc/config.gz` and examined on the PC. The relevant configuration confirms that the stock EO1 kernel was built without the required SCSI storage stack. In particular:
+
+    # CONFIG_SCSI is not set
+
+while USB host and FAT/VFAT filesystem support are present.
+
+The observed behavior is therefore internally consistent:
+
+    USB host controller          OK
+              ↓
+    USB device enumeration       OK
+              ↓
+    Mass Storage 08/06/50        OK
+              ↓
+    SCSI / USB-storage stack     unavailable
+              ↓
+    /dev/sda                     not created
+
+This is not merely an Android automount or FAT32-formatting problem. Conventional USB mass storage cannot be exposed as a block device by the stock EO1 kernel in its present configuration.
+
+Adding such support would require kernel-level work, such as rebuilding an appropriate kernel with the necessary SCSI and USB mass-storage support. That is possible as a separate reverse-engineering project, but it is not currently attractive for EO1-Museum because simpler storage paths are available.
+
+### 25.3 Internal user storage as the preferred local-storage route
+
+A separate experiment showed that the EO1 exposes its Android user storage to a Windows PC through MTP. Windows reported approximately **2.38 GB** of internal user storage, with approximately **960 MB available** at the time of testing.
+
+Typical public directories were visible, including `Android`, `DCIM`, `Download`, `Movies`, `Music`, and `Pictures`.
+
+Files transferred by MTP do not necessarily appear immediately in Android's `Downloads` application, because that application should not be assumed to be a direct filesystem browser. Nevertheless, the accessible user-storage area provides a practical location for artwork intended for a native EO1-Museum application.
+
+A future local exhibition could therefore use a structure such as:
+
+    EO1-Museum/
+    ├── images/
+    │   ├── 0001.jpg
+    │   ├── 0002.jpg
+    │   └── ...
+    ├── metadata.json
+    └── exhibition.json
+
+The preferred practical architecture is consequently shifting toward:
+
+    PC
+     ↓  prepare artwork / transfer exhibition
+    EO1 internal user storage
+     ↓
+    native EO1-Museum Android application
+     ↓
+    EO1 display
+
+Wireless ADB can be used during development and maintenance, while neither Wi-Fi nor a USB flash drive would necessarily be required during normal exhibition playback.
+
+### 25.4 Decision after the experiments
+
+The USB mass-storage experiment has answered its original question. The EO1 USB host hardware works, and standard Mass Storage devices are enumerated correctly, but the stock Android kernel lacks the storage stack required to create a conventional USB block device.
+
+For EO1-Museum, further work on USB flash-drive support is therefore **deferred**.
+
+The higher-priority development route is now:
+
+    original EO1 Android 4.4
+            +
+    wireless root ADB for development
+            +
+    EO1 internal user storage
+            +
+    EO1-specific code from spalt/EO1
+            +
+    EO1-Museum artwork/metadata pipeline
+            ↓
+    native EO1-Museum application
+
+This route preserves the working factory Android environment while reducing dependence on Firefox, the external HTTP server, and eventually the external PC during normal display operation.
+
+The experiments also reinforce the project's original principle:
 
 > **Preserve the working EO1 first; extend it only through reversible experiments.**
