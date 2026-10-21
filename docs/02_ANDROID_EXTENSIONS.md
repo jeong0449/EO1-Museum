@@ -1041,7 +1041,7 @@ A separate experiment showed that the EO1 exposes its Android user storage to a 
 
 Typical public directories were visible, including `Android`, `DCIM`, `Download`, `Movies`, `Music`, and `Pictures`.
 
-Files transferred by MTP may not appear in Android's `Downloads` application, even though they are present in the filesystem. The `Downloads` application is not a direct filesystem browser; it can display entries maintained by Android's Download Manager, including historical entries whose corresponding files have already been removed. Therefore, the contents shown in the `Downloads` application should not be used to determine the actual contents of `/sdcard/Download`. The filesystem itself can be inspected reliably through ADB.
+Files transferred by MTP may not appear immediately in Android's Downloads application. The application is not a direct filesystem browser and may also retain historical Download Manager entries after the corresponding files have been removed. Therefore, the Downloads application should not be used as a reliable representation of the actual filesystem contents.
 
 This distinction does not affect the use of internal storage for EO1-Museum. The accessible user-storage area provides a practical location for artwork intended for a native EO1-Museum application.
 
