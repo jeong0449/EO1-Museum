@@ -418,9 +418,26 @@ PC, 웹 서버 또는 네트워크는 기본 동작에 필요하지 않다.
 
 ---
 
-## 14. BBluetooth audio test
+## 14. Bluetooth audio test
 
-EO1에는 내장 오디오 출력장치가 없으나 Android 설정에서 Bluetooth 오디오 장치를 페어링한 뒤 MP4의 AAC 오디오가 정상 출력되는 것을 확인하였다. 전원을 완전히 껐다 다시 켠 뒤에도 Bluetooth 장치는 자동으로 재연결되었으며, EO1 Gallery에서 별도의 설정 없이 동영상과 오디오가 정상 재생되었다. Behringer UCA200 USB audio interface도 시험하였으나 장치에는 전원이 공급되는 반면 오디오 출력은 이루어지지 않았다.
+EO1에는 내장 오디오 출력장치가 없으나 Android 설정에서 Bluetooth 오디오 장치를 페어링한 뒤 MP4에 포함된 AAC 오디오가 정상적으로 출력되는 것을 확인하였다. 전원을 완전히 껐다 다시 켠 뒤에도 Bluetooth 장치는 자동으로 재연결되었으며, EO1 Gallery에서 별도의 설정 없이 동영상과 오디오가 정상적으로 재생되었다.
+
+USB 오디오 출력 가능성도 확인하기 위하여 Behringer UCA200 USB audio interface를 OTG 포트에 연결하여 시험하였다. UCA200에는 정상적으로 전원이 공급되었으나 오디오는 출력되지 않았다. Wi-Fi ADB를 이용하여 장치가 연결된 상태에서 확인한 결과 `/proc/asound/cards`에는 다음과 같이 사운드카드가 등록되지 않았다.
+
+```text
+--- no soundcards ---
+```
+
+`dmesg`에서는 UCA200에 사용된 Burr-Brown/TI USB Audio CODEC(VID 08BB, PID 2902)를 USB 장치로 인식하는 것까지는 확인되었으나 다음 메시지가 기록되었다.
+
+```text
+usb 1-1: new full speed USB device number 2 using fsl-ehci
+usb 1-1: device v08bb p2902 is not supported
+input: Burr-Brown from TI USB Audio CODEC as /devices/platform/fsl-ehci.0/usb1/1-1/1-1:1.3/input/input4
+generic-usb 0003:08BB:2902.0001: input,hidraw0: USB HID v1.00 Device [Burr-Brown from TI USB Audio CODEC] on usb-fsl-ehci.0-1/input3
+```
+
+따라서 EO1의 USB host 기능 자체는 정상적으로 작동하고 UCA200도 USB 장치로 검출되지만, 현재 EO1의 Android 4.4.2/Linux 환경에서는 USB audio interface가 ALSA soundcard로 등록되지 않는 것으로 판단된다. 반면 Bluetooth audio는 페어링, AAC 오디오 출력, 재부팅 후 자동 재연결까지 모두 정상적으로 동작하였다. 따라서 현재 EO1-Museum에서 동영상의 오디오를 출력하는 가장 간단하고 실용적인 방법은 Bluetooth audio를 이용하는 것이다.
 
 ---
 
