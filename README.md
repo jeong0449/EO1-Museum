@@ -25,7 +25,7 @@ EO1-Museum brings an Electric Objects EO1 back to life as a digital museum displ
   <em>
     Édouard Manet, <strong>Peonies</strong>, 1864–65, oil on canvas,
     The Metropolitan Museum of Art — displayed on an Electric Objects EO1
-    using EO1-Museum.
+    using EO1-Museum. The image shown here is being displayed through Firefox, the method used in earlier versions; starting with v0.3, EO1-Museum displays artwork directly through its own native Android application.
   </em>
 </p>
 
