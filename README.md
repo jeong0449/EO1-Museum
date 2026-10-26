@@ -1,5 +1,20 @@
 # EO1-Museum
 
+> **Note — Repository Reorganization in Progress**
+>
+> EO1 Museum has reached **v0.3**, with the native Android gallery,
+> mixed image/video playback, PC Gallery integration, mouse controls,
+> clock overlay, Bluetooth audio, and automatic HOME startup tested
+> on the actual EO1 hardware.
+>
+> This repository is currently being reorganized to reflect the new
+> architecture. Legacy materials are being moved to `archive/`, while
+> PC-side utilities that remain part of the current system are retained.
+> Development of **v0.4** is now beginning.
+>
+> The main README and installation documentation will be revised after
+> the reorganization is complete.
+
 EO1-Museum brings an Electric Objects EO1 back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
 
 <p align="center">
