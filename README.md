@@ -1,19 +1,25 @@
 # EO1-Museum
 
-> **Note — Repository Reorganization in Progress**
+> **Note — EO1 Museum v0.4**
 >
-> EO1 Museum has reached **v0.3**, with the native Android gallery,
-> mixed image/video playback, PC Gallery integration, mouse controls,
-> clock overlay, Bluetooth audio, and automatic HOME startup tested
-> on the actual EO1 hardware.
+> EO1 Museum has reached **v0.4**, extending the native Android gallery with
+> **Safe Sync between PC Gallery and the EO1's internal storage**.
+> Images prepared on the PC can now be transferred over Wi-Fi directly to
+> the Local Gallery, without using ADB or manually copying files.
 >
-> This repository is currently being reorganized to reflect the new
-> architecture. Legacy materials are being moved to `archive/`, while
-> PC-side utilities that remain part of the current system are retained.
-> Development of **v0.4** is now beginning.
+> Sync is optional and controlled by the PC-side `server.py`. The EO1 checks
+> the server identity before syncing, respects configurable limits on media
+> count and free storage space, and displays sync progress directly on screen.
+> Existing files are replaced safely using temporary downloads so that an
+> interrupted transfer does not destroy the current Local Gallery.
 >
-> The main README and installation documentation will be revised after
-> the reorganization is complete.
+> With v0.4, the workflow now connects artwork discovery and gallery
+> preparation on the PC with independent playback on the EO1:
+>
+> `artwork discovery → gallery preparation → PC Gallery → Safe Sync → Local Gallery`
+>
+> The EO1 still starts in **Local Gallery** mode and remains fully usable
+> without a PC or network connection after synchronization.
 
 EO1-Museum brings an Electric Objects EO1 back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
 
