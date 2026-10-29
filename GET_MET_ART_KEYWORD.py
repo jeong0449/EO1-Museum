@@ -144,7 +144,7 @@ def matches_query(row, groups):
     )
 
 
-def choose_candidates(groups, paintings_only=True):
+def choose_candidates(groups, paintings_only=True, subject_terms=None):
     noun = "paintings" if paintings_only else "objects"
 
     if groups:
@@ -206,6 +206,12 @@ def choose_candidates(groups, paintings_only=True):
                     continue
 
             if not matches_query(row, groups):
+                continue
+
+            if not matches_subject_filter(
+                row,
+                subject_terms or []
+            ):
                 continue
 
             oid = row.get("Object ID", "").strip()
@@ -298,6 +304,80 @@ def is_color_image(path):
 
 
 # ============================================================
+# Optional subject filters
+# ============================================================
+
+SUBJECT_FILTERS = {
+    "1": ("Any subject", []),
+    "2": (
+        "Portrait / figure",
+        [
+            "portrait", "self-portrait", "self portrait",
+            "woman", "women", "man", "men",
+            "girl", "girls", "boy", "boys",
+            "figure", "figures", "dancer", "dancers",
+            "person", "people", "mother", "child"
+        ],
+    ),
+    "3": (
+        "Landscape / nature",
+        [
+            "landscape", "river", "sea", "ocean", "coast",
+            "mountain", "forest", "tree", "trees",
+            "garden", "field", "fields", "park",
+            "snow", "beach", "shore", "nature"
+        ],
+    ),
+    "4": (
+        "Still life / flowers / food",
+        [
+            "still life", "flower", "flowers", "fruit", "fruits",
+            "food", "vase", "bouquet", "table", "bottle",
+            "apples", "pears", "peaches"
+        ],
+    ),
+    "5": (
+        "City / architecture",
+        [
+            "city", "street", "bridge", "building", "buildings",
+            "architecture", "church", "cathedral", "house",
+            "houses", "interior", "room", "boulevard",
+            "station", "harbor", "harbour"
+        ],
+    ),
+    "6": (
+        "Animals",
+        [
+            "animal", "animals", "horse", "horses", "dog", "dogs",
+            "cat", "cats", "bird", "birds", "cattle", "cow",
+            "sheep", "deer", "fish"
+        ],
+    ),
+}
+
+
+def subject_filter_text(row):
+    """Build a metadata string used only for the optional subject filter."""
+    fields = (
+        "Title",
+        "Object Name",
+        "Classification",
+        "Medium",
+        "Tags",
+        "Object Wikidata URL",
+    )
+    return " ".join(row.get(field, "") or "" for field in fields).casefold()
+
+
+def matches_subject_filter(row, subject_terms):
+    if not subject_terms:
+        return True
+
+    haystack = subject_filter_text(row)
+    return any(term.casefold() in haystack for term in subject_terms)
+
+
+# ============================================================
 # Collection management
 # ============================================================
 
@@ -361,7 +441,7 @@ def delete_collection():
 def main():
     print()
     print("==========================================")
-    print(" The Met Gallery Downloader v3.4")
+    print(" The Met Gallery Downloader v3.5")
     print(" Keyword Search Edition")
     print("==========================================")
     print()
@@ -432,9 +512,9 @@ def main():
 
     print()
     color_answer = input(
-        "Color images only? [y/N]: "
+        "Color images only? [Y/n]: "
     ).strip().lower()
-    color_only = color_answer in ("y", "yes")
+    color_only = color_answer not in ("n", "no")
 
     if color_only:
         print(
@@ -443,6 +523,29 @@ def main():
         )
     else:
         print("Color filter disabled.")
+
+    print()
+    print("Subject filter:")
+    print("  1. Any subject")
+    print("  2. Portrait / figure")
+    print("  3. Landscape / nature")
+    print("  4. Still life / flowers / food")
+    print("  5. City / architecture")
+    print("  6. Animals")
+    print()
+
+    subject_choice = input(
+        "Select [1-6] (default 1): "
+    ).strip()
+
+    if subject_choice not in SUBJECT_FILTERS:
+        subject_choice = "1"
+
+    subject_label, subject_terms = SUBJECT_FILTERS[
+        subject_choice
+    ]
+
+    print("Subject filter:", subject_label)
 
     print()
     print("Keyword examples:")
@@ -499,10 +602,7 @@ def main():
 
     download_csv()
 
-    candidates = choose_candidates(
-        groups,
-        paintings_only
-    )
+    candidates = choose_candidates(groups, paintings_only, subject_terms)
 
     if not candidates:
         print()
@@ -524,6 +624,19 @@ def main():
 
         return 2
 
+    download_target = min(TARGET, len(candidates))
+
+    print()
+    print(
+        "Selected target before image checks: %d"
+        % download_target
+    )
+    print(
+        "(Some records may still be skipped for missing images, "
+        "download errors, or the color filter.)"
+    )
+    print()
+
     saved = []
     failures = 0
     color_skips = 0
@@ -544,8 +657,8 @@ def main():
     added_this_run = 0
 
     print(
-        "Downloading/selecting up to %d images..."
-        % TARGET
+        "Downloading/selecting up to %d selected images..."
+        % download_target
     )
 
     for item in candidates:
@@ -638,7 +751,7 @@ def main():
                 "[%3d/%d] %s - %s"
                 % (
                     (added_this_run if add_mode else len(saved)),
-                    TARGET,
+                    download_target,
                     rec["artist"] or "Unknown",
                     rec["title"] or "Untitled",
                 )
