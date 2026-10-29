@@ -1,10 +1,12 @@
 from pathlib import Path
-import csv, json, random, time, urllib.request, urllib.error, sys
+import csv, json, random, time, urllib.request, urllib.error, sys, shutil
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent
 CSVFILE = ROOT / "MetObjects.csv"
 ORIGINAL = ROOT / "original"
 META = ROOT / "met_metadata.json"
+ARCHIVE = ROOT / "archive"
 
 CSV_URL = "https://media.githubusercontent.com/media/metmuseum/openaccess/master/MetObjects.csv"
 OBJECT_API = "https://collectionapi.metmuseum.org/public/collection/v1/objects/{}"
@@ -259,12 +261,127 @@ def download_image(url, path):
             f.write(b)
 
 
+
+# ============================================================
+# Collection management
+# ============================================================
+
+def count_existing_images():
+    if not ORIGINAL.exists():
+        return 0
+    return len([
+        p for p in ORIGINAL.iterdir()
+        if p.is_file()
+        and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+    ])
+
+
+def archive_collection():
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    date_name = datetime.now().strftime("%Y-%m-%d")
+    archive_dir = ARCHIVE / date_name
+
+    if archive_dir.exists():
+        i = 2
+        while (ARCHIVE / f"{date_name}_{i}").exists():
+            i += 1
+        archive_dir = ARCHIVE / f"{date_name}_{i}"
+
+    archive_dir.mkdir(parents=True, exist_ok=False)
+
+    print()
+    print("Archiving current original/ collection...")
+    print(f"  -> {archive_dir}")
+
+    moved = 0
+    if ORIGINAL.exists():
+        for item in list(ORIGINAL.iterdir()):
+            shutil.move(str(item), str(archive_dir / item.name))
+            moved += 1
+
+    if META.exists():
+        shutil.move(str(META), str(archive_dir / META.name))
+
+    ORIGINAL.mkdir(parents=True, exist_ok=True)
+    print(f"Archived files: {moved}")
+    print("Current collection archived.")
+    return archive_dir
+
+
+def delete_collection():
+    if ORIGINAL.exists():
+        for item in list(ORIGINAL.iterdir()):
+            if item.is_file() or item.is_symlink():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+
+    if META.exists():
+        META.unlink()
+
+    ORIGINAL.mkdir(parents=True, exist_ok=True)
+    print("Current collection deleted.")
+
+
 def main():
     print()
     print("==========================================")
     print(" The Met Gallery Downloader v3.1")
     print(" Keyword Search Edition")
     print("==========================================")
+    print()
+
+    existing_count = count_existing_images()
+
+    print(f"Existing images in original/: {existing_count}")
+
+    if existing_count > 0:
+        print()
+        print("[N] Start a NEW collection")
+        print("[A] ADD to current collection")
+        print()
+        print("NEW mode replaces the current collection.")
+        print()
+
+        collection_mode = input(
+            "Select [N/A] (default N): "
+        ).strip().lower()
+
+        if collection_mode == "a":
+            add_mode = True
+            print()
+            print("Add mode selected.")
+        else:
+            add_mode = False
+            print()
+            print("NEW mode will replace all files currently in:")
+            print(f"  {ORIGINAL}")
+            print()
+
+            archive_answer = input(
+                "Archive current collection before replacing it? [Y/n]: "
+            ).strip().lower()
+
+            if archive_answer in ("", "y", "yes"):
+                archive_collection()
+            else:
+                print()
+                print(
+                    "WARNING: the current collection will be permanently deleted."
+                )
+                confirm = input(
+                    "Delete without archiving? [y/N]: "
+                ).strip().lower()
+
+                if confirm != "y":
+                    print("Cancelled.")
+                    return 0
+
+                delete_collection()
+    else:
+        add_mode = False
+        ORIGINAL.mkdir(parents=True, exist_ok=True)
+
     print()
 
     print("Collection type:")
@@ -361,6 +478,21 @@ def main():
     saved = []
     failures = 0
 
+    if add_mode and META.exists():
+        try:
+            existing_meta = json.loads(META.read_text(encoding="utf-8"))
+            if isinstance(existing_meta, list):
+                saved = existing_meta
+        except Exception:
+            saved = []
+
+    existing_ids = {
+        rec.get("objectID")
+        for rec in saved
+        if isinstance(rec, dict) and rec.get("objectID") is not None
+    }
+    added_this_run = 0
+
     print(
         "Downloading/selecting up to %d images..."
         % TARGET
@@ -368,10 +500,17 @@ def main():
 
     for item in candidates:
 
-        if len(saved) >= TARGET:
-            break
+        if add_mode:
+            if added_this_run >= TARGET:
+                break
+        else:
+            if len(saved) >= TARGET:
+                break
 
         oid = item["objectID"]
+
+        if oid in existing_ids:
+            continue
 
         try:
             obj = object_json(oid)
@@ -430,11 +569,13 @@ def main():
             rec["file"] = out.name
 
             saved.append(rec)
+            existing_ids.add(oid)
+            added_this_run += 1
 
             print(
                 "[%3d/%d] %s - %s"
                 % (
-                    len(saved),
+                    (added_this_run if add_mode else len(saved)),
                     TARGET,
                     rec["artist"] or "Unknown",
                     rec["title"] or "Untitled",
