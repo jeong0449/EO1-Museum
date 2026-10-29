@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+import argparse
 import csv
 import json
 import random
@@ -17,18 +18,37 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "3.6"
-EDITION = "Keyword + Filter Edition"
+VERSION = "3.9"
+EDITION = "CLI + Artist Filter + Diagnostic Edition"
 BUILD_DATE = "2026-10-29"
 
 # Version history
 #
+# v3.9
+#   - Added --artist filter.
+#   - Multiple artists can be separated by commas (OR).
+#   - --artist and --query can be combined (AND).
+#   - Artist matching uses Artist Display Name only.
+#   - Removed misleading CSV image-URL diagnostic counts.
+#   - Kept --diagnose and --check-api diagnostic modes.
+#
+# v3.8
+#   - Added --diagnose KEYWORD.
+#   - Added --check-api.
+#   - Diagnostic mode compares CSV metadata with current Met API.
+#   - Diagnostic mode never modifies the artwork collection.
+#
+# v3.7
+#   - Added command-line options with argparse.
+#   - Added --help and --version.
+#   - Added safe --dry-run mode.
+#   - Dry run prints a reproducible download command.
+#   - Partial CLI options can be combined with interactive input.
+#   - Added --target.
+#
 # v3.6
 #   - Added multiple subject-filter selection.
 #   - Added object-type filters for non-painting collections.
-#   - Subject filters can be combined, e.g. 2,3,4.
-#   - Retained default color-image filtering.
-#   - Retained dynamic target/progress display.
 #
 # v3.5
 #   - Added subject filters.
@@ -63,16 +83,11 @@ OBJECT_API = (
     "public/collection/v1/objects/{}"
 )
 
-TARGET = 100
+DEFAULT_TARGET = 100
 CANDIDATE_POOL = 600
 TIMEOUT = 45
 
 UA = "Mozilla/5.0 EO1-Met-Gallery/" + VERSION
-
-
-# ============================================================
-# Color filter settings
-# ============================================================
 
 COLOR_CHANNEL_DELTA = 12
 COLOR_PIXEL_FRACTION = 0.03
@@ -101,18 +116,16 @@ SEARCH_FIELDS = (
 
 
 # ============================================================
-# Object type filters
-# Used mainly for All Open Access objects
+# Object filters
 # ============================================================
 
 OBJECT_FILTERS = {
-
-    "1": (
+    "any": (
         "Any object type",
         []
     ),
 
-    "2": (
+    "photo": (
         "Photograph",
         [
             "photograph",
@@ -120,7 +133,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "3": (
+    "print": (
         "Print / engraving / lithograph",
         [
             "print",
@@ -132,7 +145,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "4": (
+    "drawing": (
         "Drawing / watercolor",
         [
             "drawing",
@@ -143,7 +156,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "5": (
+    "sculpture": (
         "Sculpture",
         [
             "sculpture",
@@ -153,7 +166,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "6": (
+    "ceramics": (
         "Ceramics",
         [
             "ceramic",
@@ -165,7 +178,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "7": (
+    "textile": (
         "Textile / costume",
         [
             "textile",
@@ -178,7 +191,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "8": (
+    "furniture": (
         "Furniture / decorative arts",
         [
             "furniture",
@@ -190,7 +203,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "9": (
+    "arms": (
         "Arms & armor",
         [
             "arms and armor",
@@ -203,7 +216,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "10": (
+    "manuscript": (
         "Manuscript / book",
         [
             "manuscript",
@@ -214,7 +227,7 @@ OBJECT_FILTERS = {
         ]
     ),
 
-    "11": (
+    "graphic": (
         "Poster / graphic design",
         [
             "poster",
@@ -226,13 +239,26 @@ OBJECT_FILTERS = {
 }
 
 
+OBJECT_MENU = {
+    "1": "any",
+    "2": "photo",
+    "3": "print",
+    "4": "drawing",
+    "5": "sculpture",
+    "6": "ceramics",
+    "7": "textile",
+    "8": "furniture",
+    "9": "arms",
+    "10": "manuscript",
+    "11": "graphic",
+}
+
+
 # ============================================================
 # Subject filters
-# Multiple selections are allowed.
 # ============================================================
 
 SUBJECT_FILTERS = {
-
     "1": (
         "Any subject",
         []
@@ -354,6 +380,139 @@ SUBJECT_FILTERS = {
 
 
 # ============================================================
+# Command-line parser
+# ============================================================
+
+def build_parser():
+
+    parser = argparse.ArgumentParser(
+        description=(
+            SCRIPT_NAME
+            + " - download Open Access artwork "
+            + "from The Metropolitan Museum of Art."
+        )
+    )
+
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=(
+            "%s v%s (%s)"
+            % (
+                SCRIPT_NAME,
+                VERSION,
+                BUILD_DATE,
+            )
+        ),
+    )
+
+    parser.add_argument(
+        "--diagnose",
+        metavar="KEYWORD",
+        help=(
+            "diagnose metadata filtering for a keyword "
+            "without modifying the collection"
+        ),
+    )
+
+    parser.add_argument(
+        "--check-api",
+        action="store_true",
+        help=(
+            "with --diagnose, compare CSV metadata "
+            "against the current Met object API"
+        ),
+    )
+
+    parser.add_argument(
+        "--type",
+        choices=[
+            "painting",
+            "all",
+        ],
+        dest="collection_type",
+        help="collection type: painting or all",
+    )
+
+    parser.add_argument(
+        "--object",
+        choices=list(
+            OBJECT_FILTERS.keys()
+        ),
+        dest="object_type",
+        help="object filter for --type all",
+    )
+
+    parser.add_argument(
+        "--subject",
+        help=(
+            "subject filter numbers, "
+            "e.g. 2,3,4"
+        ),
+    )
+
+    color_group = (
+        parser.add_mutually_exclusive_group()
+    )
+
+    color_group.add_argument(
+        "--color",
+        dest="color_only",
+        action="store_true",
+        help="color images only",
+    )
+
+    color_group.add_argument(
+        "--no-color",
+        dest="color_only",
+        action="store_false",
+        help="disable color-image filtering",
+    )
+
+    parser.set_defaults(
+        color_only=None
+    )
+
+    parser.add_argument(
+        "--artist",
+        help=(
+            "artist name filter; "
+            "commas separate alternative artists (OR)"
+        ),
+    )
+
+    parser.add_argument(
+        "--query",
+        help=(
+            "general metadata query; "
+            "spaces=AND, commas=OR"
+        ),
+    )
+
+    parser.add_argument(
+        "--target",
+        type=int,
+        help=(
+            "number of images to select "
+            "(default: %d)"
+            % DEFAULT_TARGET
+        ),
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "search/count only; "
+            "do not modify or download artwork"
+        ),
+    )
+
+    return parser
+
+
+# ============================================================
 # Network
 # ============================================================
 
@@ -373,7 +532,7 @@ def fetch(url):
 
 
 # ============================================================
-# Download Met CSV if necessary
+# Download Met CSV
 # ============================================================
 
 def download_csv():
@@ -383,33 +542,1113 @@ def download_csv():
 
     print()
     print("MetObjects.csv not found.")
-    print("Downloading Met Open Access metadata...")
+    print(
+        "Downloading Met Open Access metadata..."
+    )
     print()
 
-    with fetch(CSV_URL) as r, open(CSVFILE, "wb") as f:
+    with fetch(CSV_URL) as r, \
+            open(CSVFILE, "wb") as f:
 
         while True:
 
-            block = r.read(1024 * 1024)
+            block = r.read(
+                1024 * 1024
+            )
 
             if not block:
                 break
 
             f.write(block)
 
-    print("Saved:", CSVFILE)
+    print(
+        "Saved:",
+        CSVFILE
+    )
 
 
 # ============================================================
-# Keyword parser
-#
-# spaces = AND
-# commas = OR
+# Basic helpers
+# ============================================================
+
+def search_text(row):
+
+    return " ".join(
+        row.get(field, "") or ""
+        for field in SEARCH_FIELDS
+    ).casefold()
+
+
+def is_painting(row):
+
+    classification = (
+        row.get(
+            "Classification",
+            ""
+        )
+        .strip()
+        .casefold()
+    )
+
+    object_name = (
+        row.get(
+            "Object Name",
+            ""
+        )
+        .strip()
+        .casefold()
+    )
+
+    return (
+        "paint" in classification
+        or
+        "paint" in object_name
+    )
+
+
+def is_public_domain(row):
+
+    value = (
+        row.get(
+            "Is Public Domain",
+            ""
+        )
+        .strip()
+        .casefold()
+    )
+
+    return value == "true"
+
+
+# ============================================================
+# Artist filter
+# ============================================================
+
+def parse_artist_filter(value):
+
+    if not value:
+        return []
+
+    return [
+        artist.strip().casefold()
+        for artist in value.split(",")
+        if artist.strip()
+    ]
+
+
+def matches_artist(row, artists):
+
+    if not artists:
+        return True
+
+    artist_name = (
+        row.get(
+            "Artist Display Name",
+            ""
+        )
+        or ""
+    ).casefold()
+
+    return any(
+        artist in artist_name
+        for artist in artists
+    )
+
+
+# ============================================================
+# Object API
+# ============================================================
+
+def object_json(oid):
+
+    with fetch(
+        OBJECT_API.format(oid)
+    ) as r:
+
+        return json.load(r)
+
+
+# ============================================================
+# Diagnostic API comparison
+# ============================================================
+
+def diagnose_api_records(records):
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        " CSV vs CURRENT MET API"
+    )
+    print(
+        "=========================================="
+    )
+
+    print()
+    print(
+        "Checking %d painting record(s)..."
+        % len(records)
+    )
+    print()
+
+    api_checked = 0
+    api_errors = 0
+
+    csv_public_count = 0
+    api_public_count = 0
+    api_image_count = 0
+
+    disagreement_count = 0
+    csv_false_api_true = 0
+    csv_true_api_false = 0
+
+    results = []
+
+    for index, rec in enumerate(
+        records,
+        start=1
+    ):
+
+        oid = rec["objectID"]
+        csv_public = rec["csv_public"]
+
+        if csv_public:
+            csv_public_count += 1
+
+        try:
+
+            obj = object_json(
+                oid
+            )
+
+            api_checked += 1
+
+            api_public = bool(
+                obj.get(
+                    "isPublicDomain"
+                )
+            )
+
+            api_image = bool(
+                obj.get(
+                    "primaryImage"
+                )
+                or
+                obj.get(
+                    "primaryImageSmall"
+                )
+            )
+
+            if api_public:
+                api_public_count += 1
+
+            if api_image:
+                api_image_count += 1
+
+            disagreement = (
+                csv_public
+                != api_public
+            )
+
+            if disagreement:
+
+                disagreement_count += 1
+
+                if (
+                    not csv_public
+                    and api_public
+                ):
+                    csv_false_api_true += 1
+
+                elif (
+                    csv_public
+                    and not api_public
+                ):
+                    csv_true_api_false += 1
+
+            result = {
+                "objectID": oid,
+                "title": (
+                    obj.get("title")
+                    or
+                    rec["title"]
+                ),
+                "artist": (
+                    obj.get(
+                        "artistDisplayName"
+                    )
+                    or
+                    rec["artist"]
+                ),
+                "csv_public":
+                    csv_public,
+                "api_public":
+                    api_public,
+                "api_image":
+                    api_image,
+                "disagreement":
+                    disagreement,
+            }
+
+            results.append(
+                result
+            )
+
+            marker = (
+                "!"
+                if disagreement
+                else " "
+            )
+
+            print(
+                "[%2d/%d] %s ID %-7s "
+                "CSV=%-5s API=%-5s IMG=%-3s  %s"
+                % (
+                    index,
+                    len(records),
+                    marker,
+                    oid,
+                    str(csv_public),
+                    str(api_public),
+                    (
+                        "yes"
+                        if api_image
+                        else "no"
+                    ),
+                    result["title"][:55],
+                )
+            )
+
+            time.sleep(
+                0.15
+            )
+
+        except Exception as e:
+
+            api_errors += 1
+
+            print(
+                "[%2d/%d] ? ID %-7s API ERROR: %s"
+                % (
+                    index,
+                    len(records),
+                    oid,
+                    e,
+                )
+            )
+
+    print()
+    print(
+        "------------------------------------------"
+    )
+    print(
+        "API COMPARISON SUMMARY"
+    )
+    print(
+        "------------------------------------------"
+    )
+
+    print(
+        "Painting records checked      :",
+        len(records)
+    )
+
+    print(
+        "Successful API checks         :",
+        api_checked
+    )
+
+    print(
+        "API errors                    :",
+        api_errors
+    )
+
+    print()
+
+    print(
+        "CSV Public Domain = True      :",
+        csv_public_count
+    )
+
+    print(
+        "API isPublicDomain = True     :",
+        api_public_count
+    )
+
+    print(
+        "API image available           :",
+        api_image_count
+    )
+
+    print()
+
+    print(
+        "CSV/API disagreements         :",
+        disagreement_count
+    )
+
+    print(
+        "CSV False -> API True         :",
+        csv_false_api_true
+    )
+
+    print(
+        "CSV True  -> API False        :",
+        csv_true_api_false
+    )
+
+    disagreements = [
+        r
+        for r in results
+        if r["disagreement"]
+    ]
+
+    if disagreements:
+
+        print()
+        print(
+            "------------------------------------------"
+        )
+        print(
+            "DISAGREEMENTS"
+        )
+        print(
+            "------------------------------------------"
+        )
+
+        for r in disagreements:
+
+            print()
+
+            print(
+                "Object ID :",
+                r["objectID"]
+            )
+
+            print(
+                "Artist    :",
+                r["artist"]
+                or "(blank)"
+            )
+
+            print(
+                "Title     :",
+                r["title"]
+                or "(blank)"
+            )
+
+            print(
+                "CSV Public:",
+                r["csv_public"]
+            )
+
+            print(
+                "API Public:",
+                r["api_public"]
+            )
+
+            print(
+                "API Image :",
+                r["api_image"]
+            )
+
+    print()
+    print(
+        "=========================================="
+    )
+
+    if csv_false_api_true > 0:
+
+        print(
+            "IMPORTANT: Some records rejected by the "
+            "CSV Public Domain filter are currently "
+            "reported as Public Domain by the Met API."
+        )
+
+    elif disagreement_count == 0:
+
+        print(
+            "CSV and API Public Domain status agree "
+            "for all successfully checked records."
+        )
+
+    print()
+    print(
+        "No artwork or collection files were changed."
+    )
+
+    return results
+
+
+# ============================================================
+# Diagnostic mode
+# ============================================================
+
+def diagnose_keyword(
+    keyword,
+    check_api=False
+):
+
+    keyword = (
+        keyword or ""
+    ).strip().casefold()
+
+    if not keyword:
+
+        print(
+            "ERROR: diagnostic keyword is empty."
+        )
+        return 2
+
+    download_csv()
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        " METADATA DIAGNOSTIC"
+    )
+    print(
+        "=========================================="
+    )
+
+    print()
+    print(
+        "Keyword:",
+        keyword
+    )
+
+    print()
+    print(
+        "Reading:",
+        CSVFILE
+    )
+
+    total_rows = 0
+
+    keyword_matches = 0
+    public_matches = 0
+    painting_matches = 0
+    public_painting_matches = 0
+
+    public_nonpainting = 0
+    painting_nonpublic = 0
+
+    artist_field_matches = 0
+    title_field_matches = 0
+
+    public_values = {}
+    classifications = {}
+    object_names = {}
+
+    examples_public_painting = []
+    examples_nonpublic_painting = []
+    examples_public_nonpainting = []
+
+    painting_records_for_api = []
+
+    with open(
+        CSVFILE,
+        "r",
+        encoding="utf-8-sig",
+        newline=""
+    ) as f:
+
+        reader = csv.DictReader(f)
+
+        fieldnames = (
+            reader.fieldnames
+            or []
+        )
+
+        print()
+        print(
+            "Relevant CSV columns found:"
+        )
+
+        wanted_columns = (
+            "Object ID",
+            "Is Public Domain",
+            "Object Name",
+            "Classification",
+            "Title",
+            "Artist Display Name",
+        )
+
+        for name in wanted_columns:
+
+            if name in fieldnames:
+
+                print(
+                    "  [OK]     ",
+                    name
+                )
+
+            else:
+
+                print(
+                    "  [MISSING]",
+                    name
+                )
+
+        for row in reader:
+
+            total_rows += 1
+
+            haystack = search_text(
+                row
+            )
+
+            if keyword not in haystack:
+                continue
+
+            keyword_matches += 1
+
+            artist = (
+                row.get(
+                    "Artist Display Name",
+                    ""
+                )
+                or ""
+            )
+
+            title = (
+                row.get(
+                    "Title",
+                    ""
+                )
+                or ""
+            )
+
+            if (
+                keyword
+                in artist.casefold()
+            ):
+                artist_field_matches += 1
+
+            if (
+                keyword
+                in title.casefold()
+            ):
+                title_field_matches += 1
+
+            pd_raw = (
+                row.get(
+                    "Is Public Domain",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            pd_key = (
+                pd_raw
+                if pd_raw
+                else "(blank)"
+            )
+
+            public_values[
+                pd_key
+            ] = (
+                public_values.get(
+                    pd_key,
+                    0
+                )
+                + 1
+            )
+
+            classification = (
+                row.get(
+                    "Classification",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            classification_key = (
+                classification
+                if classification
+                else "(blank)"
+            )
+
+            classifications[
+                classification_key
+            ] = (
+                classifications.get(
+                    classification_key,
+                    0
+                )
+                + 1
+            )
+
+            object_name = (
+                row.get(
+                    "Object Name",
+                    ""
+                )
+                or ""
+            ).strip()
+
+            object_name_key = (
+                object_name
+                if object_name
+                else "(blank)"
+            )
+
+            object_names[
+                object_name_key
+            ] = (
+                object_names.get(
+                    object_name_key,
+                    0
+                )
+                + 1
+            )
+
+            public = is_public_domain(
+                row
+            )
+
+            painting = is_painting(
+                row
+            )
+
+            if painting:
+
+                oid = (
+                    row.get(
+                        "Object ID",
+                        ""
+                    )
+                    or ""
+                ).strip()
+
+                if oid.isdigit():
+
+                    painting_records_for_api.append({
+                        "objectID": int(oid),
+                        "title": title,
+                        "artist": artist,
+                        "csv_public": public,
+                    })
+
+            if public:
+                public_matches += 1
+
+            if painting:
+                painting_matches += 1
+
+            if (
+                public
+                and painting
+            ):
+                public_painting_matches += 1
+
+            if (
+                public
+                and not painting
+            ):
+                public_nonpainting += 1
+
+            if (
+                painting
+                and not public
+            ):
+                painting_nonpublic += 1
+
+            example = {
+                "id": (
+                    row.get(
+                        "Object ID",
+                        ""
+                    )
+                    or "?"
+                ),
+                "artist": artist,
+                "title": title,
+                "public": pd_raw,
+                "classification": classification,
+                "object_name": object_name,
+            }
+
+            if (
+                public
+                and painting
+            ):
+
+                if (
+                    len(
+                        examples_public_painting
+                    )
+                    < 10
+                ):
+                    examples_public_painting.append(
+                        example
+                    )
+
+            elif (
+                painting
+                and not public
+            ):
+
+                if (
+                    len(
+                        examples_nonpublic_painting
+                    )
+                    < 15
+                ):
+                    examples_nonpublic_painting.append(
+                        example
+                    )
+
+            elif (
+                public
+                and not painting
+            ):
+
+                if (
+                    len(
+                        examples_public_nonpainting
+                    )
+                    < 10
+                ):
+                    examples_public_nonpainting.append(
+                        example
+                    )
+
+    print()
+    print(
+        "------------------------------------------"
+    )
+    print(
+        "COUNTS"
+    )
+    print(
+        "------------------------------------------"
+    )
+
+    print(
+        "Total CSV records              :",
+        total_rows
+    )
+
+    print(
+        "Keyword anywhere in metadata   :",
+        keyword_matches
+    )
+
+    print(
+        "Keyword in Artist Display Name :",
+        artist_field_matches
+    )
+
+    print(
+        "Keyword in Title               :",
+        title_field_matches
+    )
+
+    print()
+
+    print(
+        "Keyword + Public Domain        :",
+        public_matches
+    )
+
+    print(
+        "Keyword + Painting             :",
+        painting_matches
+    )
+
+    print(
+        "Keyword + Public + Painting    :",
+        public_painting_matches
+    )
+
+    print()
+
+    print(
+        "Painting but NOT Public        :",
+        painting_nonpublic
+    )
+
+    print(
+        "Public but NOT Painting        :",
+        public_nonpainting
+    )
+
+    print()
+    print(
+        "Image URLs are not evaluated from MetObjects.csv."
+    )
+    print(
+        "Use --check-api to check current API image availability."
+    )
+
+    print()
+    print(
+        "------------------------------------------"
+    )
+    print(
+        "RAW 'Is Public Domain' VALUES"
+    )
+    print(
+        "------------------------------------------"
+    )
+
+    for value, count in sorted(
+        public_values.items(),
+        key=lambda x: (
+            -x[1],
+            x[0]
+        )
+    ):
+
+        print(
+            "%6d  %r"
+            % (
+                count,
+                value
+            )
+        )
+
+    print()
+    print(
+        "------------------------------------------"
+    )
+    print(
+        "TOP CLASSIFICATIONS"
+    )
+    print(
+        "------------------------------------------"
+    )
+
+    for value, count in sorted(
+        classifications.items(),
+        key=lambda x: (
+            -x[1],
+            x[0]
+        )
+    )[:15]:
+
+        print(
+            "%6d  %s"
+            % (
+                count,
+                value
+            )
+        )
+
+    print()
+    print(
+        "------------------------------------------"
+    )
+    print(
+        "TOP OBJECT NAMES"
+    )
+    print(
+        "------------------------------------------"
+    )
+
+    for value, count in sorted(
+        object_names.items(),
+        key=lambda x: (
+            -x[1],
+            x[0]
+        )
+    )[:15]:
+
+        print(
+            "%6d  %s"
+            % (
+                count,
+                value
+            )
+        )
+
+    def print_examples(
+        heading,
+        records
+    ):
+
+        print()
+        print(
+            "------------------------------------------"
+        )
+        print(
+            heading
+        )
+        print(
+            "------------------------------------------"
+        )
+
+        if not records:
+
+            print(
+                "(none)"
+            )
+            return
+
+        for rec in records:
+
+            print()
+
+            print(
+                "ID            :",
+                rec["id"]
+            )
+
+            print(
+                "Artist        :",
+                rec["artist"]
+                or "(blank)"
+            )
+
+            print(
+                "Title         :",
+                rec["title"]
+                or "(blank)"
+            )
+
+            print(
+                "Public Domain :",
+                repr(
+                    rec["public"]
+                )
+            )
+
+            print(
+                "Classification:",
+                rec["classification"]
+                or "(blank)"
+            )
+
+            print(
+                "Object Name   :",
+                rec["object_name"]
+                or "(blank)"
+            )
+
+    print_examples(
+        "EXAMPLES: PUBLIC + PAINTING",
+        examples_public_painting
+    )
+
+    print_examples(
+        "EXAMPLES: PAINTING BUT NOT PUBLIC",
+        examples_nonpublic_painting
+    )
+
+    print_examples(
+        "EXAMPLES: PUBLIC BUT NOT PAINTING",
+        examples_public_nonpainting
+    )
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        "DIAGNOSTIC SUMMARY"
+    )
+    print(
+        "=========================================="
+    )
+
+    print()
+
+    if keyword_matches == 0:
+
+        print(
+            "The keyword does not occur in the "
+            "current MetObjects.csv metadata."
+        )
+
+    else:
+
+        if (
+            artist_field_matches
+            < keyword_matches
+        ):
+
+            print(
+                "Some keyword matches occur outside "
+                "Artist Display Name."
+            )
+
+        if (
+            painting_matches
+            > public_painting_matches
+        ):
+
+            print(
+                "%d matching painting record(s) are "
+                "being rejected by the Public Domain filter."
+                % (
+                    painting_matches
+                    -
+                    public_painting_matches
+                )
+            )
+
+        if (
+            public_matches
+            > public_painting_matches
+        ):
+
+            print(
+                "%d Public Domain matching record(s) are "
+                "being rejected by the painting test."
+                % (
+                    public_matches
+                    -
+                    public_painting_matches
+                )
+            )
+
+        print()
+
+        print(
+            "Normal painting search would accept "
+            "approximately %d metadata record(s) "
+            "before subject/color checks."
+            % public_painting_matches
+        )
+
+    print()
+    print(
+        "Diagnostic mode did not modify original/, "
+        "archive/, or met_metadata.json."
+    )
+
+    if check_api:
+
+        if painting_records_for_api:
+
+            diagnose_api_records(
+                painting_records_for_api
+            )
+
+        else:
+
+            print()
+            print(
+                "No matching painting records "
+                "available for API comparison."
+            )
+
+    return 0
+
+
+# ============================================================
+# Query parser
 # ============================================================
 
 def parse_query(query):
 
-    query = query.strip()
+    query = (
+        query or ""
+    ).strip()
 
     if not query:
         return []
@@ -428,18 +1667,6 @@ def parse_query(query):
             groups.append(terms)
 
     return groups
-
-
-# ============================================================
-# Keyword matching
-# ============================================================
-
-def search_text(row):
-
-    return " ".join(
-        row.get(field, "") or ""
-        for field in SEARCH_FIELDS
-    ).casefold()
 
 
 def matches_query(row, groups):
@@ -480,7 +1707,10 @@ def object_filter_text(row):
     ).casefold()
 
 
-def matches_object_filter(row, object_terms):
+def matches_object_filter(
+    row,
+    object_terms
+):
 
     if not object_terms:
         return True
@@ -513,7 +1743,10 @@ def subject_filter_text(row):
     ).casefold()
 
 
-def matches_subject_filter(row, subject_terms):
+def matches_subject_filter(
+    row,
+    subject_terms
+):
 
     if not subject_terms:
         return True
@@ -526,17 +1759,66 @@ def matches_subject_filter(row, subject_terms):
     )
 
 
+def parse_subject_choices(value):
+
+    if not value:
+        return ["1"]
+
+    choices = []
+
+    for part in value.split(","):
+
+        part = part.strip()
+
+        if part in SUBJECT_FILTERS:
+            choices.append(part)
+
+    if (
+        not choices
+        or "1" in choices
+    ):
+        return ["1"]
+
+    result = []
+
+    for choice in choices:
+
+        if choice not in result:
+            result.append(choice)
+
+    return result
+
+
+def get_subject_info(choices):
+
+    labels = []
+    terms = []
+
+    for choice in choices:
+
+        label, choice_terms = (
+            SUBJECT_FILTERS[choice]
+        )
+
+        labels.append(label)
+        terms.extend(choice_terms)
+
+    return labels, terms
+
+
 # ============================================================
 # Candidate selection
 # ============================================================
 
 def choose_candidates(
     groups,
+    artists=None,
     paintings_only=True,
     subject_terms=None,
     object_terms=None
 ):
 
+    artists = artists or []
     subject_terms = subject_terms or []
     object_terms = object_terms or []
 
@@ -544,7 +1826,9 @@ def choose_candidates(
     seen = 0
 
     print()
-    print("Searching Met metadata...")
+    print(
+        "Searching Met metadata..."
+    )
 
     with open(
         CSVFILE,
@@ -557,47 +1841,21 @@ def choose_candidates(
 
         for row in reader:
 
-            # Public Domain only
+            if not is_public_domain(row):
+                continue
 
             if (
-                row.get(
-                    "Is Public Domain",
-                    ""
-                ).strip().lower()
-                != "true"
+                paintings_only
+                and
+                not is_painting(row)
             ):
                 continue
 
-            # Painting-only mode
-
-            if paintings_only:
-
-                classification = (
-                    row.get(
-                        "Classification",
-                        ""
-                    )
-                    .strip()
-                    .lower()
-                )
-
-                object_name = (
-                    row.get(
-                        "Object Name",
-                        ""
-                    )
-                    .strip()
-                    .lower()
-                )
-
-                if (
-                    "paint" not in classification
-                    and
-                    "paint" not in object_name
-                ):
-                    continue
-
-            # Keyword filter
+            if not matches_artist(
+                row,
+                artists
+            ):
+                continue
 
             if not matches_query(
                 row,
@@ -605,15 +1863,11 @@ def choose_candidates(
             ):
                 continue
 
-            # Object-type filter
-
             if not matches_object_filter(
                 row,
                 object_terms
             ):
                 continue
-
-            # Subject filter
 
             if not matches_subject_filter(
                 row,
@@ -635,7 +1889,10 @@ def choose_candidates(
 
             item = {
                 "objectID": int(oid),
-                "title": row.get("Title", ""),
+                "title": row.get(
+                    "Title",
+                    ""
+                ),
                 "artist": row.get(
                     "Artist Display Name",
                     ""
@@ -650,20 +1907,30 @@ def choose_candidates(
                 ),
             }
 
-            # Reservoir sampling
+            if (
+                len(reservoir)
+                < CANDIDATE_POOL
+            ):
 
-            if len(reservoir) < CANDIDATE_POOL:
-
-                reservoir.append(item)
+                reservoir.append(
+                    item
+                )
 
             else:
 
-                j = random.randrange(seen)
+                j = random.randrange(
+                    seen
+                )
 
-                if j < CANDIDATE_POOL:
+                if (
+                    j
+                    < CANDIDATE_POOL
+                ):
                     reservoir[j] = item
 
-    random.shuffle(reservoir)
+    random.shuffle(
+        reservoir
+    )
 
     label = (
         "painting"
@@ -679,20 +1946,7 @@ def choose_candidates(
         )
     )
 
-    return reservoir
-
-
-# ============================================================
-# Met object API
-# ============================================================
-
-def object_json(oid):
-
-    with fetch(
-        OBJECT_API.format(oid)
-    ) as r:
-
-        return json.load(r)
+    return reservoir, seen
 
 
 # ============================================================
@@ -701,11 +1955,14 @@ def object_json(oid):
 
 def download_image(url, path):
 
-    with fetch(url) as r, open(path, "wb") as f:
+    with fetch(url) as r, \
+            open(path, "wb") as f:
 
         while True:
 
-            block = r.read(1024 * 1024)
+            block = r.read(
+                1024 * 1024
+            )
 
             if not block:
                 break
@@ -714,7 +1971,7 @@ def download_image(url, path):
 
 
 # ============================================================
-# Color-image test
+# Color test
 # ============================================================
 
 def is_color_image(path):
@@ -741,14 +1998,10 @@ def is_color_image(path):
         ) >= COLOR_CHANNEL_DELTA
     )
 
-    fraction = (
+    return (
         chromatic
         /
         len(pixels)
-    )
-
-    return (
-        fraction
         >= COLOR_PIXEL_FRACTION
     )
 
@@ -763,8 +2016,9 @@ def archive_current_collection():
         exist_ok=True
     )
 
-    base = datetime.now().strftime(
-        "%Y-%m-%d"
+    base = (
+        datetime.now()
+        .strftime("%Y-%m-%d")
     )
 
     destination = (
@@ -789,15 +2043,13 @@ def archive_current_collection():
 
     if ORIGINAL.exists():
 
-        target = (
-            destination
-            /
-            "original"
-        )
-
         shutil.move(
             str(ORIGINAL),
-            str(target)
+            str(
+                destination
+                /
+                "original"
+            )
         )
 
     if META.exists():
@@ -818,10 +2070,6 @@ def archive_current_collection():
     print(destination)
 
 
-# ============================================================
-# Delete current collection
-# ============================================================
-
 def delete_current_collection():
 
     if ORIGINAL.exists():
@@ -837,7 +2085,7 @@ def delete_current_collection():
 
 
 # ============================================================
-# Collection mode
+# Prepare collection
 # ============================================================
 
 def prepare_collection():
@@ -861,8 +2109,12 @@ def prepare_collection():
     )
 
     print()
-    print("[N] Start a NEW collection")
-    print("[A] ADD to current collection")
+    print(
+        "[N] Start a NEW collection"
+    )
+    print(
+        "[A] ADD to current collection"
+    )
     print()
 
     choice = input(
@@ -919,7 +2171,9 @@ def prepare_collection():
             ):
 
                 print()
-                print("Cancelled.")
+                print(
+                    "Cancelled."
+                )
 
                 return None
 
@@ -933,10 +2187,419 @@ def prepare_collection():
 
 
 # ============================================================
+# Interactive helpers
+# ============================================================
+
+def ask_collection_type():
+
+    print()
+    print("Collection type:")
+    print("  1. Paintings")
+    print(
+        "  2. All Open Access objects"
+    )
+    print()
+
+    value = input(
+        "Select [1/2] (default 1): "
+    ).strip()
+
+    if value == "2":
+        return "all"
+
+    return "painting"
+
+
+def ask_object_type():
+
+    print()
+    print("Object type filter:")
+    print("  1. Any object type")
+    print("  2. Photograph")
+    print(
+        "  3. Print / engraving / lithograph"
+    )
+    print(
+        "  4. Drawing / watercolor"
+    )
+    print("  5. Sculpture")
+    print("  6. Ceramics")
+    print("  7. Textile / costume")
+    print(
+        "  8. Furniture / decorative arts"
+    )
+    print("  9. Arms & armor")
+    print(" 10. Manuscript / book")
+    print(
+        " 11. Poster / graphic design"
+    )
+    print()
+
+    value = input(
+        "Select [1-11] (default 1): "
+    ).strip()
+
+    return OBJECT_MENU.get(
+        value,
+        "any"
+    )
+
+
+def ask_color():
+
+    print()
+
+    value = input(
+        "Color images only? [Y/n]: "
+    ).strip().lower()
+
+    return (
+        value
+        not in (
+            "n",
+            "no"
+        )
+    )
+
+
+def ask_subject():
+
+    print()
+    print(
+        "Subject filter "
+        "(multiple selections allowed):"
+    )
+    print("  1. Any subject")
+    print("  2. Portrait / figure")
+    print("  3. Landscape / nature")
+    print(
+        "  4. Still life / flowers / food"
+    )
+    print("  5. City / architecture")
+    print("  6. Animals")
+    print()
+
+    value = input(
+        "Select [1-6, comma separated] "
+        "(default 1): "
+    ).strip()
+
+    return ",".join(
+        parse_subject_choices(value)
+    )
+
+
+def ask_artist():
+
+    print()
+    print("Artist filter (optional):")
+    print("  renoir")
+    print("  claude monet")
+    print("  renoir, pissarro, sisley")
+    print()
+    print(
+        "Commas mean OR. "
+        "Matching is against Artist Display Name only."
+    )
+    print()
+
+    return input(
+        "Artist(s), or Enter for any artist: "
+    ).strip()
+
+
+def ask_query(paintings_only):
+
+    print()
+    print("General keyword examples:")
+    print("  landscape")
+    print("  water lilies")
+    print("  landscape, garden")
+    print("  korean ceramics")
+    print("  japanese woodblock")
+    print()
+
+    print(
+        "Rule: spaces = AND, commas = OR"
+    )
+
+    if paintings_only:
+
+        print(
+            "Press Enter for no general metadata filter."
+        )
+
+    else:
+
+        print(
+            "Press Enter for no general metadata filter."
+        )
+
+    print()
+
+    return input(
+        "General keyword(s): "
+    ).strip()
+
+
+# ============================================================
+# Command quoting
+# ============================================================
+
+def command_quote(value):
+
+    value = str(value)
+
+    if not value:
+        return '""'
+
+    if any(
+        ch.isspace()
+        or ch in ',&|<>^'
+        for ch in value
+    ):
+
+        value = value.replace(
+            '"',
+            '\\"'
+        )
+
+        return (
+            '"'
+            + value
+            + '"'
+        )
+
+    return value
+
+
+# ============================================================
+# Build reproducible command
+# ============================================================
+
+def build_download_command(
+    collection_type,
+    object_type,
+    subject_value,
+    color_only,
+    artist,
+    query,
+    target
+):
+
+    script = Path(
+        sys.argv[0]
+    ).name
+
+    parts = [
+        "python",
+        command_quote(script),
+        "--type",
+        collection_type,
+    ]
+
+    if collection_type == "all":
+
+        parts.extend([
+            "--object",
+            object_type,
+        ])
+
+    parts.extend([
+        "--subject",
+        subject_value,
+    ])
+
+    if color_only:
+        parts.append("--color")
+    else:
+        parts.append("--no-color")
+
+    if artist:
+
+        parts.extend([
+            "--artist",
+            command_quote(artist),
+        ])
+
+    if query:
+
+        parts.extend([
+            "--query",
+            command_quote(query),
+        ])
+
+    parts.extend([
+        "--target",
+        str(target),
+    ])
+
+    return " ".join(parts)
+
+
+# ============================================================
+# Dry-run report
+# ============================================================
+
+def show_dry_run(
+    collection_type,
+    object_type,
+    subject_choices,
+    subject_labels,
+    color_only,
+    artist,
+    query,
+    target,
+    match_count
+):
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        " DRY RUN RESULT"
+    )
+    print(
+        "=========================================="
+    )
+
+    print()
+
+    if collection_type == "painting":
+
+        print(
+            "Collection type : Paintings"
+        )
+
+    else:
+
+        print(
+            "Collection type : "
+            "All Open Access objects"
+        )
+
+        print(
+            "Object filter   :",
+            OBJECT_FILTERS[
+                object_type
+            ][0]
+        )
+
+    print(
+        "Subject         :",
+        " + ".join(subject_labels)
+    )
+
+    print(
+        "Color only      :",
+        "Yes"
+        if color_only
+        else "No"
+    )
+
+    print(
+        "Artist          :",
+        artist
+        if artist
+        else "(any)"
+    )
+
+    print(
+        "General query   :",
+        query
+        if query
+        else "(none)"
+    )
+
+    print(
+        "Target          :",
+        target
+    )
+
+    print()
+
+    print(
+        "Matching metadata records :",
+        match_count
+    )
+
+    print(
+        "Download target           :",
+        min(
+            target,
+            match_count
+        )
+    )
+
+    if color_only:
+
+        print()
+        print(
+            "NOTE: Color filtering was NOT evaluated."
+        )
+
+        print(
+            "It requires downloading the actual images."
+        )
+
+    print()
+    print(
+        "No artwork, metadata, archive, or current "
+        "collection was changed."
+    )
+
+    command = build_download_command(
+        collection_type,
+        object_type,
+        ",".join(subject_choices),
+        color_only,
+        artist,
+        query,
+        target
+    )
+
+    print()
+    print(
+        "To download with exactly these search settings:"
+    )
+    print()
+    print(command)
+    print()
+
+
+# ============================================================
 # Main
 # ============================================================
 
 def main():
+
+    parser = build_parser()
+    args = parser.parse_args()
+
+    # Diagnostic mode has priority over normal operation.
+
+    if args.diagnose is not None:
+
+        print()
+        print(
+            "%s v%s"
+            % (
+                SCRIPT_NAME,
+                VERSION
+            )
+        )
+
+        return diagnose_keyword(
+            args.diagnose,
+            check_api=args.check_api
+        )
+
+    if args.check_api:
+
+        parser.error(
+            "--check-api requires --diagnose KEYWORD"
+        )
 
     print()
     print(
@@ -961,304 +2624,165 @@ def main():
         "=========================================="
     )
 
-    # --------------------------------------------------------
-    # NEW / ADD
-    # --------------------------------------------------------
+    collection_type = (
+        args.collection_type
+    )
 
-    add_mode = prepare_collection()
+    if collection_type is None:
 
-    if add_mode is None:
-        return 1
-
-    # --------------------------------------------------------
-    # Collection type
-    # --------------------------------------------------------
-
-    print()
-    print("Collection type:")
-    print("  1. Paintings")
-    print("  2. All Open Access objects")
-    print()
-
-    mode = input(
-        "Select [1/2] (default 1): "
-    ).strip()
+        collection_type = (
+            ask_collection_type()
+        )
 
     paintings_only = (
-        mode != "2"
-    )
-
-    # --------------------------------------------------------
-    # Object-type filter
-    # --------------------------------------------------------
-
-    object_terms = []
-
-    if not paintings_only:
-
-        print()
-        print("Object type filter:")
-        print("  1. Any object type")
-        print("  2. Photograph")
-        print(
-            "  3. Print / engraving / lithograph"
-        )
-        print(
-            "  4. Drawing / watercolor"
-        )
-        print("  5. Sculpture")
-        print("  6. Ceramics")
-        print("  7. Textile / costume")
-        print(
-            "  8. Furniture / decorative arts"
-        )
-        print("  9. Arms & armor")
-        print(" 10. Manuscript / book")
-        print(
-            " 11. Poster / graphic design"
-        )
-        print()
-
-        object_choice = input(
-            "Select [1-11] (default 1): "
-        ).strip()
-
-        if (
-            object_choice
-            not in OBJECT_FILTERS
-        ):
-            object_choice = "1"
-
-        (
-            object_label,
-            object_terms
-        ) = OBJECT_FILTERS[
-            object_choice
-        ]
-
-        print(
-            "Object type filter:",
-            object_label
-        )
-
-    # --------------------------------------------------------
-    # Color filter
-    # Default = YES
-    # --------------------------------------------------------
-
-    print()
-
-    color_answer = input(
-        "Color images only? [Y/n]: "
-    ).strip().lower()
-
-    color_only = (
-        color_answer
-        not in (
-            "n",
-            "no"
-        )
-    )
-
-    if color_only:
-
-        print(
-            "Color filter enabled "
-            "(grayscale/nearly grayscale "
-            "images will be skipped)."
-        )
-
-    else:
-
-        print(
-            "Color filter disabled."
-        )
-
-    # --------------------------------------------------------
-    # Subject filter
-    # Multiple selections allowed
-    # --------------------------------------------------------
-
-    print()
-    print(
-        "Subject filter "
-        "(multiple selections allowed):"
-    )
-    print("  1. Any subject")
-    print("  2. Portrait / figure")
-    print("  3. Landscape / nature")
-    print(
-        "  4. Still life / flowers / food"
-    )
-    print("  5. City / architecture")
-    print("  6. Animals")
-    print()
-
-    subject_input = input(
-        "Select [1-6, comma separated] "
-        "(default 1): "
-    ).strip()
-
-    if not subject_input:
-
-        subject_choices = ["1"]
-
-    else:
-
-        subject_choices = [
-            x.strip()
-            for x in subject_input.split(",")
-            if (
-                x.strip()
-                in SUBJECT_FILTERS
-            )
-        ]
-
-        if (
-            not subject_choices
-            or "1" in subject_choices
-        ):
-
-            subject_choices = ["1"]
-
-    subject_labels = []
-    subject_terms = []
-
-    for choice in subject_choices:
-
-        (
-            label,
-            terms
-        ) = SUBJECT_FILTERS[
-            choice
-        ]
-
-        subject_labels.append(label)
-        subject_terms.extend(terms)
-
-    print(
-        "Subject filter:",
-        " + ".join(subject_labels)
-    )
-
-    # --------------------------------------------------------
-    # Keyword
-    # --------------------------------------------------------
-
-    print()
-    print("Keyword examples:")
-    print("  monet")
-    print("  monet landscape")
-    print("  monet, renoir")
-    print(
-        "  renoir, monet, pissarro, "
-        "sisley, morisot, cassatt"
-    )
-    print("  korean ceramics")
-    print("  japanese woodblock")
-    print("  egyptian sculpture")
-    print()
-
-    print(
-        "Rule: spaces = AND, commas = OR"
+        collection_type
+        == "painting"
     )
 
     if paintings_only:
 
-        print(
-            "Press Enter for random paintings "
-            "without a keyword filter."
+        object_type = "any"
+        object_terms = []
+
+    else:
+
+        object_type = (
+            args.object_type
+        )
+
+        if object_type is None:
+
+            object_type = (
+                ask_object_type()
+            )
+
+        object_terms = (
+            OBJECT_FILTERS[
+                object_type
+            ][1]
+        )
+
+    color_only = (
+        args.color_only
+    )
+
+    if color_only is None:
+
+        color_only = ask_color()
+
+    subject_value = (
+        args.subject
+    )
+
+    if subject_value is None:
+
+        subject_value = (
+            ask_subject()
+        )
+
+    subject_choices = (
+        parse_subject_choices(
+            subject_value
+        )
+    )
+
+    (
+        subject_labels,
+        subject_terms
+    ) = get_subject_info(
+        subject_choices
+    )
+
+    if args.artist is None:
+
+        artist = ask_artist()
+
+    else:
+
+        artist = (
+            args.artist.strip()
+        )
+
+    artists = (
+        parse_artist_filter(
+            artist
+        )
+    )
+
+    if args.query is None:
+
+        query = ask_query(
+            paintings_only
         )
 
     else:
 
-        print(
-            "Press Enter for random Open Access "
-            "objects without a keyword filter."
+        query = (
+            args.query.strip()
         )
 
-    print()
+    groups = parse_query(
+        query
+    )
 
-    query = input(
-        "Search keyword(s): "
-    ).strip()
+    target = (
+        args.target
+        if args.target is not None
+        else DEFAULT_TARGET
+    )
 
-    groups = parse_query(query)
+    if target <= 0:
 
-    if groups:
-
-        pretty = " OR ".join(
-            "("
-            +
-            " AND ".join(group)
-            +
-            ")"
-            for group in groups
+        parser.error(
+            "--target must be greater than zero"
         )
-
-        print(
-            "Search rule:",
-            pretty
-        )
-
-    else:
-
-        if paintings_only:
-
-            print(
-                "Search rule: "
-                "all eligible paintings"
-            )
-
-        else:
-
-            print(
-                "Search rule: "
-                "all eligible objects"
-            )
-
-    # --------------------------------------------------------
-    # CSV
-    # --------------------------------------------------------
-
-    print()
 
     download_csv()
 
-    # --------------------------------------------------------
-    # Candidate selection
-    # --------------------------------------------------------
-
-    candidates = choose_candidates(
-        groups,
-        paintings_only,
-        subject_terms,
-        object_terms
+    candidates, match_count = (
+        choose_candidates(
+            groups,
+            artists,
+            paintings_only,
+            subject_terms,
+            object_terms
+        )
     )
+
+    if args.dry_run:
+
+        show_dry_run(
+            collection_type,
+            object_type,
+            subject_choices,
+            subject_labels,
+            color_only,
+            artist,
+            query,
+            target,
+            match_count
+        )
+
+        return 0
 
     if not candidates:
 
         print()
-
-        noun = (
-            "painting"
-            if paintings_only
-            else "object"
-        )
-
         print(
-            "No matching %s records were found."
-            % noun
-        )
-
-        print(
-            "Try fewer or broader keywords."
+            "No matching records were found."
         )
 
         return 2
 
+    add_mode = (
+        prepare_collection()
+    )
+
+    if add_mode is None:
+        return 1
+
     download_target = min(
-        TARGET,
+        target,
         len(candidates)
     )
 
@@ -1267,18 +2791,6 @@ def main():
         "Selected target before image checks: %d"
         % download_target
     )
-
-    print(
-        "(Some records may still be skipped "
-        "for missing images, download errors, "
-        "or the color filter.)"
-    )
-
-    print()
-
-    # --------------------------------------------------------
-    # Existing metadata for ADD mode
-    # --------------------------------------------------------
 
     saved = []
     failures = 0
@@ -1322,15 +2834,12 @@ def main():
 
     added_this_run = 0
 
+    print()
     print(
         "Downloading/selecting up to "
         "%d selected images..."
         % download_target
     )
-
-    # --------------------------------------------------------
-    # Download
-    # --------------------------------------------------------
 
     for item in candidates:
 
@@ -1349,7 +2858,9 @@ def main():
 
         try:
 
-            obj = object_json(oid)
+            obj = object_json(
+                oid
+            )
 
             if not obj.get(
                 "isPublicDomain"
@@ -1388,10 +2899,6 @@ def main():
                     out
                 )
 
-            # ------------------------------------------------
-            # Actual image color test
-            # ------------------------------------------------
-
             if (
                 color_only
                 and
@@ -1413,10 +2920,6 @@ def main():
                     pass
 
                 continue
-
-            # ------------------------------------------------
-            # Metadata
-            # ------------------------------------------------
 
             rec = dict(item)
 
@@ -1450,11 +2953,17 @@ def main():
                 item["objectURL"]
             )
 
-            rec["file"] = out.name
+            rec["file"] = (
+                out.name
+            )
 
-            saved.append(rec)
+            saved.append(
+                rec
+            )
 
-            existing_ids.add(oid)
+            existing_ids.add(
+                oid
+            )
 
             added_this_run += 1
 
@@ -1470,7 +2979,9 @@ def main():
                 )
             )
 
-            time.sleep(0.20)
+            time.sleep(
+                0.20
+            )
 
         except urllib.error.HTTPError as e:
 
@@ -1490,8 +3001,8 @@ def main():
             ):
 
                 print(
-                    "  Server is rate-limiting "
-                    "requests; waiting 5 seconds..."
+                    "  Server is rate-limiting; "
+                    "waiting 5 seconds..."
                 )
 
                 time.sleep(5)
@@ -1508,10 +3019,6 @@ def main():
                 )
             )
 
-    # --------------------------------------------------------
-    # Save metadata
-    # --------------------------------------------------------
-
     META.write_text(
         json.dumps(
             saved,
@@ -1520,10 +3027,6 @@ def main():
         ),
         encoding="utf-8"
     )
-
-    # --------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------
 
     print()
 
@@ -1538,16 +3041,6 @@ def main():
     )
 
     print(
-        "Images stored in:",
-        ORIGINAL
-    )
-
-    print(
-        "Metadata:",
-        META
-    )
-
-    print(
         "Failures:",
         failures
     )
@@ -1558,19 +3051,6 @@ def main():
             "Skipped by color filter:",
             color_skips
         )
-
-    if added_this_run == 0:
-
-        print()
-        print(
-            "No new images were downloaded."
-        )
-
-        print(
-            "Try broader keywords or filters."
-        )
-
-        return 2
 
     print()
     print(
