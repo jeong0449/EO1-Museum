@@ -35,7 +35,11 @@ EO1-Museum brings an Electric Objects EO1 back to life as a digital museum displ
   </em>
 </p>
 
-The basic workflow is:
+## Original Browser-Based Architecture
+
+EO1-Museum originally began as a **browser-based revival** of the Electric Objects EO1. Rather than replacing the original Android system or developing a new native application, the first working version used a PC to prepare and serve a web gallery, while the EO1 displayed that gallery through Firefox.
+
+The basic workflow was:
 
 ```text
 Open-access museum collections
@@ -55,7 +59,13 @@ Firefox opens the local gallery
 Museum artworks are displayed on the EO1
 ```
 
-Artwork collection, selection, image processing, and web serving are handled by a PC on the same local network.
+Artwork collection, selection, image processing, and web serving were handled by a PC on the same local network. **Firefox 68.11.0** served as the gallery runtime on the EO1, while **MetBoot** automatically launched Firefox after Android booted. Once configured, this provided a simple unattended art-display system without depending on the original Electric Objects service.
+
+This architecture was the foundation of EO1-Museum, but it was later superseded by the native **EO1 Museum** Android application. The native application introduced an independent Local Gallery using the EO1's internal storage, and later incorporated the PC-based web gallery itself through an embedded WebView. Beginning with v0.4, Safe Sync further connected the two modes by allowing exhibitions prepared on the PC to be transferred directly to the EO1 over Wi-Fi.
+
+The complete development path—from the original browser-only experiment through Firefox and MetBoot, native Android development, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync—is documented in [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
+
+The current architecture and workflow are described in the sections below.
 
 ## Installation
 
