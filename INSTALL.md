@@ -1,12 +1,14 @@
 # Installation Guide
 
-> **Note — Installation Procedure Has Changed**
+> **Important — This Installation Guide Is Outdated**
 >
-> The EO1-Museum installation procedure has changed substantially with the development of the native Android application and the current v0.4 architecture.
+> The EO1-Museum installation procedure has changed substantially with the development of the native Android application.
 >
-> **This installation guide has not yet been fully updated to reflect these changes.** Some instructions may still describe the earlier Firefox/MetBoot-based setup and should therefore be treated as historical or transitional information rather than the recommended installation procedure.
+> **This guide has not yet been updated for the current v0.4 architecture and should not be followed as a complete installation procedure.**
 >
-> The guide will be revised to document the current native Android installation and configuration process. Until then, please use the instructions below with caution.
+> In particular, **Firefox and MetBoot are no longer required** for normal EO1-Museum operation. Their use belongs to an earlier browser-based version of the project. The current system runs through the native **EO1 Museum Android application**, which provides both Local Gallery and PC Gallery functionality and supports PC-to-EO1 Safe Sync.
+>
+> This document will be rewritten to describe the current installation procedure. Until then, the instructions below should be regarded primarily as documentation of the earlier setup.
 
 This guide describes how to set up **EO1-Museum** on a PC and prepare an
 Electric Objects EO1 to display the gallery automatically.
