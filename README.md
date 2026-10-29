@@ -73,24 +73,29 @@ For normal operation, three Windows batch files are provided:
 
 ## Museum Collections
 
-EO1-Museum currently uses the open-access collection of **The Metropolitan Museum of Art (The Met)** as its first artwork source. Artworks can be searched and selected using collection metadata, downloaded to the PC, processed for the EO1's 1080 × 1920 display, and presented as a local web gallery.
+EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**.
 
-Searches can be based on artists, periods, cultures, subjects, and other metadata. For example:
+**The Met** provides a well-structured institutional collection with rich metadata. EO1-Museum can search its open-access collection using artist names, keywords, subjects, periods, cultures, and other metadata, making it particularly useful for systematic and curated discovery.
+
+**Wikimedia Commons** provides a much broader pool of public-domain and freely reusable artwork images gathered from museums and cultural institutions around the world. EO1-Museum uses artist-based discovery, image-resolution filtering, license checks, and local metadata caching to identify suitable works. Because the collection is broader and less uniform than a single museum database, the workflow also supports human curation through persistent reject lists.
+
+The two sources therefore complement each other:
 
 ```text
-renoir
-landscape
-hokusai
-joseon
-renoir portrait
-renoir, degas
+The Met
+   └── structured, museum-based discovery
+
+Wikimedia Commons
+   └── broad, cross-collection discovery
 ```
 
-See [Search Examples](SEARCH_EXAMPLES.md) for search syntax, additional examples, and approximate result counts.
+Discovered artworks are downloaded to the PC, curated locally, and processed for the EO1's 1080 × 1920 portrait display. The resulting gallery can be viewed directly through PC Gallery or transferred to the EO1's internal storage using Safe Sync for independent Local Gallery playback.
 
-The project is designed so that collections from other museums can be added in the future, extending EO1-Museum beyond The Met into a more general platform for exploring and displaying open-access museum collections.
+Detailed search syntax, command-line options, examples, caching behavior, and curation workflows are documented separately in [Search Examples](SEARCH_EXAMPLES.md).
 
-In this sense, EO1-Museum can also be seen as a small experiment in what might be called **“Fine Art Informatics”** — using open museum data, metadata, computation, and digital displays to discover, curate, and experience works of art.
+The discovery system is intentionally extensible, so additional open-access collections can be added when suitable image and metadata sources are available.
+
+In this sense, EO1-Museum can also be seen as a small experiment in what might be called **“Fine Art Informatics”** — using open cultural data, metadata, computation, human curation, and digital displays to discover, organize, and experience works of art.
 
 ## Inspiration and Prior Work
 
