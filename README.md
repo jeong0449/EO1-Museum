@@ -69,17 +69,29 @@ The current architecture and workflow are described in the sections below.
 
 ## Installation
 
-For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the museum gallery, see the [Installation Guide](INSTALL.md).
+> **⚠️ Documentation under revision**
+>
+> The installation documentation is currently being revised for **EO1 Museum v0.4**. The existing [Installation Guide](INSTALL.md) primarily describes the earlier **Firefox + MetBoot browser-based architecture** and should therefore be regarded as a historical installation procedure rather than the current recommended setup.
+>
+> The current native EO1 Museum application no longer requires Firefox or MetBoot for normal operation. A revised installation procedure covering the native application, initial ADB setup, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync is being prepared.
+>
+> Until the revised guide is completed, please read the existing installation instructions with this distinction in mind.
+
+### Legacy Browser-Based Installation
+
+For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the original browser-based museum gallery, see the [Installation Guide](INSTALL.md).
 
 A prebuilt `MetBoot.apk` is included in the repository root for direct installation on the EO1. The complete Android Studio source code is also provided in the `MetBoot/` directory.
 
-Once configured, the EO1 requires only power and a Wi-Fi connection for normal operation. When the EO1 boots, **MetBoot** automatically launches Firefox, which opens the EO1-Museum gallery served by the PC on the local network.
+In this earlier configuration, the EO1 required power and a Wi-Fi connection for normal operation. When the EO1 booted, **MetBoot** automatically launched Firefox, which opened the EO1-Museum gallery served by the PC on the local network.
 
-For normal operation, three Windows batch files are provided:
+Three Windows batch files were provided for operating this browser-based version:
 
 - `START_EO1.bat` — start the current exhibition and local web server.
 - `UPDATE_MET.bat` — select a new exhibition while the server is already running.
 - `GET_MET_AND_START.bat` — select a new exhibition and then start the server.
+
+For the history of this architecture and its transition to the native EO1 Museum application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 
 ## Museum Collections
 
