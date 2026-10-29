@@ -1,6 +1,7 @@
 from pathlib import Path
 import csv, json, random, time, urllib.request, urllib.error, sys, shutil
 from datetime import datetime
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
 CSVFILE = ROOT / "MetObjects.csv"
@@ -14,7 +15,14 @@ OBJECT_API = "https://collectionapi.metmuseum.org/public/collection/v1/objects/{
 TARGET = 100
 CANDIDATE_POOL = 600
 TIMEOUT = 45
-UA = "Mozilla/5.0 EO1-Met-Gallery/3.1"
+UA = "Mozilla/5.0 EO1-Met-Gallery/3.4"
+
+# Color-image test. A sampled pixel is considered chromatic when the
+# difference between its strongest and weakest RGB channels exceeds
+# COLOR_CHANNEL_DELTA. The image is accepted as color when at least
+# COLOR_PIXEL_FRACTION of sampled pixels are chromatic.
+COLOR_CHANNEL_DELTA = 12
+COLOR_PIXEL_FRACTION = 0.03
 
 ORIGINAL.mkdir(exist_ok=True)
 
@@ -261,6 +269,33 @@ def download_image(url, path):
             f.write(b)
 
 
+def is_color_image(path):
+    """
+    Return True when the downloaded image contains a meaningful amount
+    of chromatic information.
+
+    The image is reduced to a small RGB thumbnail for speed. This is an
+    image-content test, not a metadata guess: grayscale and nearly
+    grayscale works are rejected when "Color images only" is enabled.
+    """
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((160, 160))
+
+        pixels = list(im.getdata())
+
+    if not pixels:
+        return False
+
+    chromatic = sum(
+        1
+        for r, g, b in pixels
+        if max(r, g, b) - min(r, g, b) >= COLOR_CHANNEL_DELTA
+    )
+
+    return (chromatic / len(pixels)) >= COLOR_PIXEL_FRACTION
+
+
 
 # ============================================================
 # Collection management
@@ -326,7 +361,7 @@ def delete_collection():
 def main():
     print()
     print("==========================================")
-    print(" The Met Gallery Downloader v3.1")
+    print(" The Met Gallery Downloader v3.4")
     print(" Keyword Search Edition")
     print("==========================================")
     print()
@@ -394,6 +429,20 @@ def main():
     ).strip()
 
     paintings_only = (mode != "2")
+
+    print()
+    color_answer = input(
+        "Color images only? [y/N]: "
+    ).strip().lower()
+    color_only = color_answer in ("y", "yes")
+
+    if color_only:
+        print(
+            "Color filter enabled "
+            "(grayscale/nearly grayscale images will be skipped)."
+        )
+    else:
+        print("Color filter disabled.")
 
     print()
     print("Keyword examples:")
@@ -477,6 +526,7 @@ def main():
 
     saved = []
     failures = 0
+    color_skips = 0
 
     if add_mode and META.exists():
         try:
@@ -543,6 +593,18 @@ def main():
                     image,
                     out
                 )
+
+            if color_only and not is_color_image(out):
+                color_skips += 1
+                print(
+                    "  Skip %s: grayscale/nearly grayscale image"
+                    % oid
+                )
+                try:
+                    out.unlink()
+                except OSError:
+                    pass
+                continue
 
             rec = dict(item)
 
@@ -637,6 +699,12 @@ def main():
         "Failures:",
         failures
     )
+
+    if color_only:
+        print(
+            "Skipped by color filter:",
+            color_skips
+        )
 
     if len(saved) == 0:
         print()
