@@ -1,165 +1,550 @@
 from pathlib import Path
-import csv, json, random, time, urllib.request, urllib.error, sys, shutil
 from datetime import datetime
+import csv
+import json
+import random
+import shutil
+import sys
+import time
+import urllib.error
+import urllib.request
+
 from PIL import Image
 
+
+# ============================================================
+# Script information
+# ============================================================
+
+SCRIPT_NAME = "The Met Gallery Downloader"
+VERSION = "3.6"
+EDITION = "Keyword + Filter Edition"
+BUILD_DATE = "2026-10-29"
+
+# Version history
+#
+# v3.6
+#   - Added multiple subject-filter selection.
+#   - Added object-type filters for non-painting collections.
+#   - Subject filters can be combined, e.g. 2,3,4.
+#   - Retained default color-image filtering.
+#   - Retained dynamic target/progress display.
+#
+# v3.5
+#   - Added subject filters.
+#   - Added dynamic selected-target/progress display.
+#
+# v3.4
+#   - Added actual image-based color filtering.
+#
+# v3.3
+#   - Added NEW/ADD collection workflow.
+#   - Added optional archive before replacing a collection.
+
+
+# ============================================================
+# Basic settings
+# ============================================================
+
 ROOT = Path(__file__).resolve().parent
+
 CSVFILE = ROOT / "MetObjects.csv"
 ORIGINAL = ROOT / "original"
 META = ROOT / "met_metadata.json"
 ARCHIVE = ROOT / "archive"
 
-CSV_URL = "https://media.githubusercontent.com/media/metmuseum/openaccess/master/MetObjects.csv"
-OBJECT_API = "https://collectionapi.metmuseum.org/public/collection/v1/objects/{}"
+CSV_URL = (
+    "https://media.githubusercontent.com/media/"
+    "metmuseum/openaccess/master/MetObjects.csv"
+)
+
+OBJECT_API = (
+    "https://collectionapi.metmuseum.org/"
+    "public/collection/v1/objects/{}"
+)
 
 TARGET = 100
 CANDIDATE_POOL = 600
 TIMEOUT = 45
-UA = "Mozilla/5.0 EO1-Met-Gallery/3.4"
 
-# Color-image test. A sampled pixel is considered chromatic when the
-# difference between its strongest and weakest RGB channels exceeds
-# COLOR_CHANNEL_DELTA. The image is accepted as color when at least
-# COLOR_PIXEL_FRACTION of sampled pixels are chromatic.
+UA = "Mozilla/5.0 EO1-Met-Gallery/" + VERSION
+
+
+# ============================================================
+# Color filter settings
+# ============================================================
+
 COLOR_CHANNEL_DELTA = 12
 COLOR_PIXEL_FRACTION = 0.03
 
-ORIGINAL.mkdir(exist_ok=True)
 
-# Search these MetObjects.csv fields.
-SEARCH_FIELDS = [
+# ============================================================
+# Search fields
+# ============================================================
+
+SEARCH_FIELDS = (
     "Title",
     "Artist Display Name",
-    "Artist Nationality",
+    "Artist Display Bio",
     "Object Name",
     "Classification",
+    "Medium",
     "Culture",
     "Period",
     "Dynasty",
     "Reign",
+    "Portfolio",
     "Object Date",
-    "Medium",
-    "Credit Line",
-]
+    "Department",
+    "Tags",
+)
 
+
+# ============================================================
+# Object type filters
+# Used mainly for All Open Access objects
+# ============================================================
+
+OBJECT_FILTERS = {
+
+    "1": (
+        "Any object type",
+        []
+    ),
+
+    "2": (
+        "Photograph",
+        [
+            "photograph",
+            "photography",
+        ]
+    ),
+
+    "3": (
+        "Print / engraving / lithograph",
+        [
+            "print",
+            "engraving",
+            "etching",
+            "lithograph",
+            "woodcut",
+            "woodblock",
+        ]
+    ),
+
+    "4": (
+        "Drawing / watercolor",
+        [
+            "drawing",
+            "watercolor",
+            "watercolour",
+            "pastel",
+            "gouache",
+        ]
+    ),
+
+    "5": (
+        "Sculpture",
+        [
+            "sculpture",
+            "statue",
+            "statuette",
+            "relief",
+        ]
+    ),
+
+    "6": (
+        "Ceramics",
+        [
+            "ceramic",
+            "ceramics",
+            "pottery",
+            "porcelain",
+            "earthenware",
+            "stoneware",
+        ]
+    ),
+
+    "7": (
+        "Textile / costume",
+        [
+            "textile",
+            "costume",
+            "dress",
+            "garment",
+            "fabric",
+            "tapestry",
+            "carpet",
+        ]
+    ),
+
+    "8": (
+        "Furniture / decorative arts",
+        [
+            "furniture",
+            "chair",
+            "table",
+            "cabinet",
+            "decorative arts",
+            "vessel",
+        ]
+    ),
+
+    "9": (
+        "Arms & armor",
+        [
+            "arms and armor",
+            "arms & armor",
+            "armor",
+            "armour",
+            "sword",
+            "helmet",
+            "shield",
+        ]
+    ),
+
+    "10": (
+        "Manuscript / book",
+        [
+            "manuscript",
+            "book",
+            "codex",
+            "folio",
+            "album",
+        ]
+    ),
+
+    "11": (
+        "Poster / graphic design",
+        [
+            "poster",
+            "graphic design",
+            "advertisement",
+            "commercial print",
+        ]
+    ),
+}
+
+
+# ============================================================
+# Subject filters
+# Multiple selections are allowed.
+# ============================================================
+
+SUBJECT_FILTERS = {
+
+    "1": (
+        "Any subject",
+        []
+    ),
+
+    "2": (
+        "Portrait / figure",
+        [
+            "portrait",
+            "self-portrait",
+            "self portrait",
+            "woman",
+            "women",
+            "man",
+            "men",
+            "girl",
+            "girls",
+            "boy",
+            "boys",
+            "figure",
+            "figures",
+            "person",
+            "people",
+            "mother",
+            "child",
+            "dancer",
+            "dancers",
+        ]
+    ),
+
+    "3": (
+        "Landscape / nature",
+        [
+            "landscape",
+            "river",
+            "sea",
+            "ocean",
+            "coast",
+            "mountain",
+            "forest",
+            "tree",
+            "trees",
+            "garden",
+            "field",
+            "fields",
+            "park",
+            "snow",
+            "beach",
+            "shore",
+            "nature",
+        ]
+    ),
+
+    "4": (
+        "Still life / flowers / food",
+        [
+            "still life",
+            "flower",
+            "flowers",
+            "fruit",
+            "fruits",
+            "vase",
+            "bouquet",
+            "table",
+            "bottle",
+            "apple",
+            "apples",
+            "pear",
+            "pears",
+            "peach",
+            "peaches",
+            "food",
+        ]
+    ),
+
+    "5": (
+        "City / architecture",
+        [
+            "city",
+            "street",
+            "bridge",
+            "building",
+            "buildings",
+            "architecture",
+            "church",
+            "cathedral",
+            "house",
+            "houses",
+            "interior",
+            "room",
+            "boulevard",
+            "station",
+            "harbor",
+            "harbour",
+        ]
+    ),
+
+    "6": (
+        "Animals",
+        [
+            "animal",
+            "animals",
+            "horse",
+            "horses",
+            "dog",
+            "dogs",
+            "cat",
+            "cats",
+            "bird",
+            "birds",
+            "cattle",
+            "cow",
+            "sheep",
+            "deer",
+            "fish",
+        ]
+    ),
+}
+
+
+# ============================================================
+# Network
+# ============================================================
 
 def fetch(url):
+
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": UA, "Accept": "*/*"}
+        headers={
+            "User-Agent": UA
+        }
     )
-    return urllib.request.urlopen(req, timeout=TIMEOUT)
 
+    return urllib.request.urlopen(
+        req,
+        timeout=TIMEOUT
+    )
+
+
+# ============================================================
+# Download Met CSV if necessary
+# ============================================================
 
 def download_csv():
-    if CSVFILE.exists() and CSVFILE.stat().st_size > 10_000_000:
-        print(
-            "Using existing MetObjects.csv (%.1f MB)"
-            % (CSVFILE.stat().st_size / 1048576)
-        )
+
+    if CSVFILE.exists():
         return
 
-    print("Downloading The Met Open Access CSV.")
-    print("This is a large file (about 300 MB), so the first run can take a while.")
+    print()
+    print("MetObjects.csv not found.")
+    print("Downloading Met Open Access metadata...")
+    print()
 
-    tmp = CSVFILE.with_suffix(".csv.part")
+    with fetch(CSV_URL) as r, open(CSVFILE, "wb") as f:
 
-    try:
-        with fetch(CSV_URL) as r, open(tmp, "wb") as f:
-            total = int(r.headers.get("Content-Length", "0") or 0)
-            done = 0
+        while True:
 
-            while True:
-                chunk = r.read(1024 * 1024)
-                if not chunk:
-                    break
+            block = r.read(1024 * 1024)
 
-                f.write(chunk)
-                done += len(chunk)
+            if not block:
+                break
 
-                if total:
-                    print(
-                        "\r  %.0f%%  (%.1f / %.1f MB)"
-                        % (
-                            done * 100 / total,
-                            done / 1048576,
-                            total / 1048576,
-                        ),
-                        end="",
-                        flush=True,
-                    )
+            f.write(block)
 
-        print()
-        tmp.replace(CSVFILE)
-
-    except Exception:
-        if tmp.exists():
-            tmp.unlink()
-        raise
+    print("Saved:", CSVFILE)
 
 
-def parse_query(text):
-    """
-    Comma = OR between groups.
-    Spaces = AND inside each group.
+# ============================================================
+# Keyword parser
+#
+# spaces = AND
+# commas = OR
+# ============================================================
 
-      monet landscape
-        -> monet AND landscape
+def parse_query(query):
 
-      monet, renoir
-        -> monet OR renoir
+    query = query.strip()
 
-      monet landscape, renoir portrait
-        -> (monet AND landscape) OR (renoir AND portrait)
+    if not query:
+        return []
 
-    Blank input means no keyword filter.
-    """
     groups = []
 
-    for part in text.split(","):
-        words = [
-            w.casefold()
-            for w in part.strip().split()
-            if w.strip()
+    for part in query.split(","):
+
+        terms = [
+            x.strip().casefold()
+            for x in part.split()
+            if x.strip()
         ]
 
-        if words:
-            groups.append(words)
+        if terms:
+            groups.append(terms)
 
     return groups
 
 
-def matches_query(row, groups):
-    if not groups:
-        return True
+# ============================================================
+# Keyword matching
+# ============================================================
 
-    search_text = " ".join(
+def search_text(row):
+
+    return " ".join(
         row.get(field, "") or ""
         for field in SEARCH_FIELDS
     ).casefold()
 
+
+def matches_query(row, groups):
+
+    if not groups:
+        return True
+
+    haystack = search_text(row)
+
+    for group in groups:
+
+        if all(
+            term in haystack
+            for term in group
+        ):
+            return True
+
+    return False
+
+
+# ============================================================
+# Object filter
+# ============================================================
+
+def object_filter_text(row):
+
+    fields = (
+        "Object Name",
+        "Classification",
+        "Medium",
+        "Department",
+        "Title",
+    )
+
+    return " ".join(
+        row.get(field, "") or ""
+        for field in fields
+    ).casefold()
+
+
+def matches_object_filter(row, object_terms):
+
+    if not object_terms:
+        return True
+
+    haystack = object_filter_text(row)
+
     return any(
-        all(word in search_text for word in group)
-        for group in groups
+        term.casefold() in haystack
+        for term in object_terms
     )
 
 
-def choose_candidates(groups, paintings_only=True, subject_terms=None):
-    noun = "paintings" if paintings_only else "objects"
+# ============================================================
+# Subject filter
+# ============================================================
 
-    if groups:
-        print(
-            "Scanning CSV for matching public-domain %s..."
-            % noun
-        )
-    else:
-        print(
-            "Scanning CSV for public-domain %s..."
-            % noun
-        )
+def subject_filter_text(row):
+
+    fields = (
+        "Title",
+        "Object Name",
+        "Classification",
+        "Medium",
+        "Tags",
+    )
+
+    return " ".join(
+        row.get(field, "") or ""
+        for field in fields
+    ).casefold()
+
+
+def matches_subject_filter(row, subject_terms):
+
+    if not subject_terms:
+        return True
+
+    haystack = subject_filter_text(row)
+
+    return any(
+        term.casefold() in haystack
+        for term in subject_terms
+    )
+
+
+# ============================================================
+# Candidate selection
+# ============================================================
+
+def choose_candidates(
+    groups,
+    paintings_only=True,
+    subject_terms=None,
+    object_terms=None
+):
+
+    subject_terms = subject_terms or []
+    object_terms = object_terms or []
 
     reservoir = []
     seen = 0
+
+    print()
+    print("Searching Met metadata...")
 
     with open(
         CSVFILE,
@@ -172,49 +557,76 @@ def choose_candidates(groups, paintings_only=True, subject_terms=None):
 
         for row in reader:
 
-            # Public Domain only.
+            # Public Domain only
+
             if (
-                row.get("Is Public Domain", "")
-                .strip()
-                .lower()
+                row.get(
+                    "Is Public Domain",
+                    ""
+                ).strip().lower()
                 != "true"
             ):
                 continue
 
-            classification = (
-                row.get("Classification", "")
-                .strip()
-                .lower()
-            )
+            # Painting-only mode
 
-            object_name = (
-                row.get("Object Name", "")
-                .strip()
-                .lower()
-            )
-
-            # Paintings mode:
-            # preserve the original painting filter.
-            #
-            # All Objects mode:
-            # do not restrict Classification/Object Name.
             if paintings_only:
+
+                classification = (
+                    row.get(
+                        "Classification",
+                        ""
+                    )
+                    .strip()
+                    .lower()
+                )
+
+                object_name = (
+                    row.get(
+                        "Object Name",
+                        ""
+                    )
+                    .strip()
+                    .lower()
+                )
+
                 if (
                     "paint" not in classification
-                    and "paint" not in object_name
+                    and
+                    "paint" not in object_name
                 ):
                     continue
 
-            if not matches_query(row, groups):
-                continue
+            # Keyword filter
 
-            if not matches_subject_filter(
+            if not matches_query(
                 row,
-                subject_terms or []
+                groups
             ):
                 continue
 
-            oid = row.get("Object ID", "").strip()
+            # Object-type filter
+
+            if not matches_object_filter(
+                row,
+                object_terms
+            ):
+                continue
+
+            # Subject filter
+
+            if not matches_subject_filter(
+                row,
+                subject_terms
+            ):
+                continue
+
+            oid = (
+                row.get(
+                    "Object ID",
+                    ""
+                ).strip()
+            )
 
             if not oid.isdigit():
                 continue
@@ -225,19 +637,27 @@ def choose_candidates(groups, paintings_only=True, subject_terms=None):
                 "objectID": int(oid),
                 "title": row.get("Title", ""),
                 "artist": row.get(
-                    "Artist Display Name", ""
+                    "Artist Display Name",
+                    ""
                 ),
-                "date": row.get("Object Date", ""),
+                "date": row.get(
+                    "Object Date",
+                    ""
+                ),
                 "objectURL": row.get(
-                    "Link Resource", ""
+                    "Link Resource",
+                    ""
                 ),
             }
 
-            # Reservoir sampling keeps a random pool
-            # without storing every matching record.
+            # Reservoir sampling
+
             if len(reservoir) < CANDIDATE_POOL:
+
                 reservoir.append(item)
+
             else:
+
                 j = random.randrange(seen)
 
                 if j < CANDIDATE_POOL:
@@ -253,42 +673,60 @@ def choose_candidates(groups, paintings_only=True, subject_terms=None):
 
     print(
         "Matching eligible %s records: %d"
-        % (label, seen)
+        % (
+            label,
+            seen
+        )
     )
 
     return reservoir
 
 
+# ============================================================
+# Met object API
+# ============================================================
+
 def object_json(oid):
-    with fetch(OBJECT_API.format(oid)) as r:
+
+    with fetch(
+        OBJECT_API.format(oid)
+    ) as r:
+
         return json.load(r)
 
 
-def download_image(url, path):
-    with fetch(url) as r, open(path, "wb") as f:
-        while True:
-            b = r.read(1024 * 1024)
+# ============================================================
+# Image download
+# ============================================================
 
-            if not b:
+def download_image(url, path):
+
+    with fetch(url) as r, open(path, "wb") as f:
+
+        while True:
+
+            block = r.read(1024 * 1024)
+
+            if not block:
                 break
 
-            f.write(b)
+            f.write(block)
 
+
+# ============================================================
+# Color-image test
+# ============================================================
 
 def is_color_image(path):
-    """
-    Return True when the downloaded image contains a meaningful amount
-    of chromatic information.
 
-    The image is reduced to a small RGB thumbnail for speed. This is an
-    image-content test, not a metadata guess: grayscale and nearly
-    grayscale works are rejected when "Color images only" is enabled.
-    """
     with Image.open(path) as im:
+
         im = im.convert("RGB")
         im.thumbnail((160, 160))
 
-        pixels = list(im.getdata())
+        pixels = list(
+            im.getdata()
+        )
 
     if not pixels:
         return False
@@ -296,209 +734,247 @@ def is_color_image(path):
     chromatic = sum(
         1
         for r, g, b in pixels
-        if max(r, g, b) - min(r, g, b) >= COLOR_CHANNEL_DELTA
+        if (
+            max(r, g, b)
+            -
+            min(r, g, b)
+        ) >= COLOR_CHANNEL_DELTA
     )
 
-    return (chromatic / len(pixels)) >= COLOR_PIXEL_FRACTION
+    fraction = (
+        chromatic
+        /
+        len(pixels)
+    )
 
+    return (
+        fraction
+        >= COLOR_PIXEL_FRACTION
+    )
 
 
 # ============================================================
-# Optional subject filters
+# Archive current collection
 # ============================================================
 
-SUBJECT_FILTERS = {
-    "1": ("Any subject", []),
-    "2": (
-        "Portrait / figure",
-        [
-            "portrait", "self-portrait", "self portrait",
-            "woman", "women", "man", "men",
-            "girl", "girls", "boy", "boys",
-            "figure", "figures", "dancer", "dancers",
-            "person", "people", "mother", "child"
-        ],
-    ),
-    "3": (
-        "Landscape / nature",
-        [
-            "landscape", "river", "sea", "ocean", "coast",
-            "mountain", "forest", "tree", "trees",
-            "garden", "field", "fields", "park",
-            "snow", "beach", "shore", "nature"
-        ],
-    ),
-    "4": (
-        "Still life / flowers / food",
-        [
-            "still life", "flower", "flowers", "fruit", "fruits",
-            "food", "vase", "bouquet", "table", "bottle",
-            "apples", "pears", "peaches"
-        ],
-    ),
-    "5": (
-        "City / architecture",
-        [
-            "city", "street", "bridge", "building", "buildings",
-            "architecture", "church", "cathedral", "house",
-            "houses", "interior", "room", "boulevard",
-            "station", "harbor", "harbour"
-        ],
-    ),
-    "6": (
-        "Animals",
-        [
-            "animal", "animals", "horse", "horses", "dog", "dogs",
-            "cat", "cats", "bird", "birds", "cattle", "cow",
-            "sheep", "deer", "fish"
-        ],
-    ),
-}
+def archive_current_collection():
 
-
-def subject_filter_text(row):
-    """Build a metadata string used only for the optional subject filter."""
-    fields = (
-        "Title",
-        "Object Name",
-        "Classification",
-        "Medium",
-        "Tags",
-        "Object Wikidata URL",
+    ARCHIVE.mkdir(
+        exist_ok=True
     )
-    return " ".join(row.get(field, "") or "" for field in fields).casefold()
+
+    base = datetime.now().strftime(
+        "%Y-%m-%d"
+    )
+
+    destination = (
+        ARCHIVE / base
+    )
+
+    n = 2
+
+    while destination.exists():
+
+        destination = (
+            ARCHIVE
+            /
+            ("%s_%d" % (base, n))
+        )
+
+        n += 1
+
+    destination.mkdir(
+        parents=True
+    )
+
+    if ORIGINAL.exists():
+
+        target = (
+            destination
+            /
+            "original"
+        )
+
+        shutil.move(
+            str(ORIGINAL),
+            str(target)
+        )
+
+    if META.exists():
+
+        shutil.move(
+            str(META),
+            str(
+                destination
+                /
+                META.name
+            )
+        )
+
+    print()
+    print(
+        "Archived current collection to:"
+    )
+    print(destination)
 
 
-def matches_subject_filter(row, subject_terms):
-    if not subject_terms:
+# ============================================================
+# Delete current collection
+# ============================================================
+
+def delete_current_collection():
+
+    if ORIGINAL.exists():
+        shutil.rmtree(ORIGINAL)
+
+    if META.exists():
+
+        try:
+            META.unlink()
+
+        except OSError:
+            pass
+
+
+# ============================================================
+# Collection mode
+# ============================================================
+
+def prepare_collection():
+
+    ORIGINAL.mkdir(
+        exist_ok=True
+    )
+
+    existing_count = len(
+        [
+            p
+            for p in ORIGINAL.iterdir()
+            if p.is_file()
+        ]
+    )
+
+    print()
+    print(
+        "Existing images in original/:",
+        existing_count
+    )
+
+    print()
+    print("[N] Start a NEW collection")
+    print("[A] ADD to current collection")
+    print()
+
+    choice = input(
+        "Select [N/A] (default N): "
+    ).strip().lower()
+
+    add_mode = (
+        choice == "a"
+    )
+
+    if add_mode:
         return True
 
-    haystack = subject_filter_text(row)
-    return any(term.casefold() in haystack for term in subject_terms)
+    if (
+        existing_count > 0
+        or META.exists()
+    ):
 
-
-# ============================================================
-# Collection management
-# ============================================================
-
-def count_existing_images():
-    if not ORIGINAL.exists():
-        return 0
-    return len([
-        p for p in ORIGINAL.iterdir()
-        if p.is_file()
-        and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
-    ])
-
-
-def archive_collection():
-    ARCHIVE.mkdir(parents=True, exist_ok=True)
-    date_name = datetime.now().strftime("%Y-%m-%d")
-    archive_dir = ARCHIVE / date_name
-
-    if archive_dir.exists():
-        i = 2
-        while (ARCHIVE / f"{date_name}_{i}").exists():
-            i += 1
-        archive_dir = ARCHIVE / f"{date_name}_{i}"
-
-    archive_dir.mkdir(parents=True, exist_ok=False)
-
-    print()
-    print("Archiving current original/ collection...")
-    print(f"  -> {archive_dir}")
-
-    moved = 0
-    if ORIGINAL.exists():
-        for item in list(ORIGINAL.iterdir()):
-            shutil.move(str(item), str(archive_dir / item.name))
-            moved += 1
-
-    if META.exists():
-        shutil.move(str(META), str(archive_dir / META.name))
-
-    ORIGINAL.mkdir(parents=True, exist_ok=True)
-    print(f"Archived files: {moved}")
-    print("Current collection archived.")
-    return archive_dir
-
-
-def delete_collection():
-    if ORIGINAL.exists():
-        for item in list(ORIGINAL.iterdir()):
-            if item.is_file() or item.is_symlink():
-                item.unlink()
-            elif item.is_dir():
-                shutil.rmtree(item)
-
-    if META.exists():
-        META.unlink()
-
-    ORIGINAL.mkdir(parents=True, exist_ok=True)
-    print("Current collection deleted.")
-
-
-def main():
-    print()
-    print("==========================================")
-    print(" The Met Gallery Downloader v3.5")
-    print(" Keyword Search Edition")
-    print("==========================================")
-    print()
-
-    existing_count = count_existing_images()
-
-    print(f"Existing images in original/: {existing_count}")
-
-    if existing_count > 0:
         print()
-        print("[N] Start a NEW collection")
-        print("[A] ADD to current collection")
-        print()
-        print("NEW mode replaces the current collection.")
+        print(
+            "NEW mode replaces "
+            "the current collection."
+        )
         print()
 
-        collection_mode = input(
-            "Select [N/A] (default N): "
+        answer = input(
+            "Archive current collection "
+            "before replacing it? [Y/n]: "
         ).strip().lower()
 
-        if collection_mode == "a":
-            add_mode = True
-            print()
-            print("Add mode selected.")
+        if answer not in (
+            "n",
+            "no"
+        ):
+
+            archive_current_collection()
+
         else:
-            add_mode = False
+
             print()
-            print("NEW mode will replace all files currently in:")
-            print(f"  {ORIGINAL}")
+            print(
+                "WARNING: the current collection "
+                "will be permanently deleted."
+            )
             print()
 
-            archive_answer = input(
-                "Archive current collection before replacing it? [Y/n]: "
+            confirm = input(
+                "Delete without archiving? [y/N]: "
             ).strip().lower()
 
-            if archive_answer in ("", "y", "yes"):
-                archive_collection()
-            else:
+            if confirm not in (
+                "y",
+                "yes"
+            ):
+
                 print()
-                print(
-                    "WARNING: the current collection will be permanently deleted."
-                )
-                confirm = input(
-                    "Delete without archiving? [y/N]: "
-                ).strip().lower()
+                print("Cancelled.")
 
-                if confirm != "y":
-                    print("Cancelled.")
-                    return 0
+                return None
 
-                delete_collection()
-    else:
-        add_mode = False
-        ORIGINAL.mkdir(parents=True, exist_ok=True)
+            delete_current_collection()
+
+    ORIGINAL.mkdir(
+        exist_ok=True
+    )
+
+    return False
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def main():
 
     print()
+    print(
+        "=========================================="
+    )
+    print(
+        " %s v%s"
+        % (
+            SCRIPT_NAME,
+            VERSION
+        )
+    )
+    print(
+        " %s"
+        % EDITION
+    )
+    print(
+        " Build: %s"
+        % BUILD_DATE
+    )
+    print(
+        "=========================================="
+    )
 
+    # --------------------------------------------------------
+    # NEW / ADD
+    # --------------------------------------------------------
+
+    add_mode = prepare_collection()
+
+    if add_mode is None:
+        return 1
+
+    # --------------------------------------------------------
+    # Collection type
+    # --------------------------------------------------------
+
+    print()
     print("Collection type:")
     print("  1. Paintings")
     print("  2. All Open Access objects")
@@ -508,62 +984,194 @@ def main():
         "Select [1/2] (default 1): "
     ).strip()
 
-    paintings_only = (mode != "2")
+    paintings_only = (
+        mode != "2"
+    )
+
+    # --------------------------------------------------------
+    # Object-type filter
+    # --------------------------------------------------------
+
+    object_terms = []
+
+    if not paintings_only:
+
+        print()
+        print("Object type filter:")
+        print("  1. Any object type")
+        print("  2. Photograph")
+        print(
+            "  3. Print / engraving / lithograph"
+        )
+        print(
+            "  4. Drawing / watercolor"
+        )
+        print("  5. Sculpture")
+        print("  6. Ceramics")
+        print("  7. Textile / costume")
+        print(
+            "  8. Furniture / decorative arts"
+        )
+        print("  9. Arms & armor")
+        print(" 10. Manuscript / book")
+        print(
+            " 11. Poster / graphic design"
+        )
+        print()
+
+        object_choice = input(
+            "Select [1-11] (default 1): "
+        ).strip()
+
+        if (
+            object_choice
+            not in OBJECT_FILTERS
+        ):
+            object_choice = "1"
+
+        (
+            object_label,
+            object_terms
+        ) = OBJECT_FILTERS[
+            object_choice
+        ]
+
+        print(
+            "Object type filter:",
+            object_label
+        )
+
+    # --------------------------------------------------------
+    # Color filter
+    # Default = YES
+    # --------------------------------------------------------
 
     print()
+
     color_answer = input(
         "Color images only? [Y/n]: "
     ).strip().lower()
-    color_only = color_answer not in ("n", "no")
+
+    color_only = (
+        color_answer
+        not in (
+            "n",
+            "no"
+        )
+    )
 
     if color_only:
+
         print(
             "Color filter enabled "
-            "(grayscale/nearly grayscale images will be skipped)."
+            "(grayscale/nearly grayscale "
+            "images will be skipped)."
         )
+
     else:
-        print("Color filter disabled.")
+
+        print(
+            "Color filter disabled."
+        )
+
+    # --------------------------------------------------------
+    # Subject filter
+    # Multiple selections allowed
+    # --------------------------------------------------------
 
     print()
-    print("Subject filter:")
+    print(
+        "Subject filter "
+        "(multiple selections allowed):"
+    )
     print("  1. Any subject")
     print("  2. Portrait / figure")
     print("  3. Landscape / nature")
-    print("  4. Still life / flowers / food")
+    print(
+        "  4. Still life / flowers / food"
+    )
     print("  5. City / architecture")
     print("  6. Animals")
     print()
 
-    subject_choice = input(
-        "Select [1-6] (default 1): "
+    subject_input = input(
+        "Select [1-6, comma separated] "
+        "(default 1): "
     ).strip()
 
-    if subject_choice not in SUBJECT_FILTERS:
-        subject_choice = "1"
+    if not subject_input:
 
-    subject_label, subject_terms = SUBJECT_FILTERS[
-        subject_choice
-    ]
+        subject_choices = ["1"]
 
-    print("Subject filter:", subject_label)
+    else:
+
+        subject_choices = [
+            x.strip()
+            for x in subject_input.split(",")
+            if (
+                x.strip()
+                in SUBJECT_FILTERS
+            )
+        ]
+
+        if (
+            not subject_choices
+            or "1" in subject_choices
+        ):
+
+            subject_choices = ["1"]
+
+    subject_labels = []
+    subject_terms = []
+
+    for choice in subject_choices:
+
+        (
+            label,
+            terms
+        ) = SUBJECT_FILTERS[
+            choice
+        ]
+
+        subject_labels.append(label)
+        subject_terms.extend(terms)
+
+    print(
+        "Subject filter:",
+        " + ".join(subject_labels)
+    )
+
+    # --------------------------------------------------------
+    # Keyword
+    # --------------------------------------------------------
 
     print()
     print("Keyword examples:")
     print("  monet")
     print("  monet landscape")
     print("  monet, renoir")
+    print(
+        "  renoir, monet, pissarro, "
+        "sisley, morisot, cassatt"
+    )
     print("  korean ceramics")
     print("  japanese woodblock")
     print("  egyptian sculpture")
     print()
-    print("Rule: spaces = AND, commas = OR")
+
+    print(
+        "Rule: spaces = AND, commas = OR"
+    )
 
     if paintings_only:
+
         print(
             "Press Enter for random paintings "
             "without a keyword filter."
         )
+
     else:
+
         print(
             "Press Enter for random Open Access "
             "objects without a keyword filter."
@@ -578,9 +1186,14 @@ def main():
     groups = parse_query(query)
 
     if groups:
+
         pretty = " OR ".join(
-            "(" + " AND ".join(g) + ")"
-            for g in groups
+            "("
+            +
+            " AND ".join(group)
+            +
+            ")"
+            for group in groups
         )
 
         print(
@@ -589,22 +1202,42 @@ def main():
         )
 
     else:
+
         if paintings_only:
+
             print(
-                "Search rule: all eligible paintings"
+                "Search rule: "
+                "all eligible paintings"
             )
+
         else:
+
             print(
-                "Search rule: all eligible objects"
+                "Search rule: "
+                "all eligible objects"
             )
+
+    # --------------------------------------------------------
+    # CSV
+    # --------------------------------------------------------
 
     print()
 
     download_csv()
 
-    candidates = choose_candidates(groups, paintings_only, subject_terms)
+    # --------------------------------------------------------
+    # Candidate selection
+    # --------------------------------------------------------
+
+    candidates = choose_candidates(
+        groups,
+        paintings_only,
+        subject_terms,
+        object_terms
+    )
 
     if not candidates:
+
         print()
 
         noun = (
@@ -624,136 +1257,216 @@ def main():
 
         return 2
 
-    download_target = min(TARGET, len(candidates))
+    download_target = min(
+        TARGET,
+        len(candidates)
+    )
 
     print()
     print(
         "Selected target before image checks: %d"
         % download_target
     )
+
     print(
-        "(Some records may still be skipped for missing images, "
-        "download errors, or the color filter.)"
+        "(Some records may still be skipped "
+        "for missing images, download errors, "
+        "or the color filter.)"
     )
+
     print()
+
+    # --------------------------------------------------------
+    # Existing metadata for ADD mode
+    # --------------------------------------------------------
 
     saved = []
     failures = 0
     color_skips = 0
 
-    if add_mode and META.exists():
+    if (
+        add_mode
+        and META.exists()
+    ):
+
         try:
-            existing_meta = json.loads(META.read_text(encoding="utf-8"))
-            if isinstance(existing_meta, list):
-                saved = existing_meta
+
+            old_records = json.loads(
+                META.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            if isinstance(
+                old_records,
+                list
+            ):
+
+                saved.extend(
+                    old_records
+                )
+
         except Exception:
-            saved = []
+            pass
 
     existing_ids = {
         rec.get("objectID")
         for rec in saved
-        if isinstance(rec, dict) and rec.get("objectID") is not None
+        if (
+            isinstance(rec, dict)
+            and
+            rec.get("objectID")
+            is not None
+        )
     }
+
     added_this_run = 0
 
     print(
-        "Downloading/selecting up to %d selected images..."
+        "Downloading/selecting up to "
+        "%d selected images..."
         % download_target
     )
 
+    # --------------------------------------------------------
+    # Download
+    # --------------------------------------------------------
+
     for item in candidates:
 
-        if add_mode:
-            if added_this_run >= TARGET:
-                break
-        else:
-            if len(saved) >= TARGET:
-                break
+        if (
+            added_this_run
+            >= download_target
+        ):
+            break
 
-        oid = item["objectID"]
+        oid = item[
+            "objectID"
+        ]
 
         if oid in existing_ids:
             continue
 
         try:
+
             obj = object_json(oid)
 
-            # Double-check Public Domain status
-            # against the object API.
-            if not obj.get("isPublicDomain"):
+            if not obj.get(
+                "isPublicDomain"
+            ):
                 continue
 
             image = (
-                obj.get("primaryImage")
-                or obj.get("primaryImageSmall")
-                or ""
+                obj.get(
+                    "primaryImage"
+                )
+                or
+                obj.get(
+                    "primaryImageSmall"
+                )
+                or
+                ""
             )
 
-            # Some museum objects have metadata
-            # but no downloadable image.
             if not image:
                 continue
 
             out = ORIGINAL / (
-                "met_%06d.jpg" % oid
+                "met_%06d.jpg"
+                % oid
             )
 
             if (
                 not out.exists()
-                or out.stat().st_size < 10000
+                or
+                out.stat().st_size
+                < 10000
             ):
+
                 download_image(
                     image,
                     out
                 )
 
-            if color_only and not is_color_image(out):
+            # ------------------------------------------------
+            # Actual image color test
+            # ------------------------------------------------
+
+            if (
+                color_only
+                and
+                not is_color_image(out)
+            ):
+
                 color_skips += 1
+
                 print(
-                    "  Skip %s: grayscale/nearly grayscale image"
+                    "  Skip %s: "
+                    "grayscale/nearly grayscale image"
                     % oid
                 )
+
                 try:
                     out.unlink()
+
                 except OSError:
                     pass
+
                 continue
+
+            # ------------------------------------------------
+            # Metadata
+            # ------------------------------------------------
 
             rec = dict(item)
 
             rec["title"] = (
                 obj.get("title")
-                or item["title"]
+                or
+                item["title"]
             )
 
             rec["artist"] = (
-                obj.get("artistDisplayName")
-                or item["artist"]
+                obj.get(
+                    "artistDisplayName"
+                )
+                or
+                item["artist"]
             )
 
             rec["date"] = (
-                obj.get("objectDate")
-                or item["date"]
+                obj.get(
+                    "objectDate"
+                )
+                or
+                item["date"]
             )
 
             rec["objectURL"] = (
-                obj.get("objectURL")
-                or item["objectURL"]
+                obj.get(
+                    "objectURL"
+                )
+                or
+                item["objectURL"]
             )
 
             rec["file"] = out.name
 
             saved.append(rec)
+
             existing_ids.add(oid)
+
             added_this_run += 1
 
             print(
                 "[%3d/%d] %s - %s"
                 % (
-                    (added_this_run if add_mode else len(saved)),
+                    added_this_run,
                     download_target,
-                    rec["artist"] or "Unknown",
-                    rec["title"] or "Untitled",
+                    rec["artist"]
+                    or "Unknown",
+                    rec["title"]
+                    or "Untitled",
                 )
             )
 
@@ -765,14 +1478,22 @@ def main():
 
             print(
                 "  Skip %s: HTTP %s"
-                % (oid, e.code)
+                % (
+                    oid,
+                    e.code
+                )
             )
 
-            if e.code in (403, 429):
+            if e.code in (
+                403,
+                429
+            ):
+
                 print(
                     "  Server is rate-limiting "
                     "requests; waiting 5 seconds..."
                 )
+
                 time.sleep(5)
 
         except Exception as e:
@@ -781,8 +1502,15 @@ def main():
 
             print(
                 "  Skip %s: %s"
-                % (oid, e)
+                % (
+                    oid,
+                    e
+                )
             )
+
+    # --------------------------------------------------------
+    # Save metadata
+    # --------------------------------------------------------
 
     META.write_text(
         json.dumps(
@@ -793,14 +1521,25 @@ def main():
         encoding="utf-8"
     )
 
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+
     print()
 
     print(
-        "Finished: %d images selected/saved in %s"
-        % (
-            len(saved),
-            ORIGINAL
-        )
+        "Added this run:",
+        added_this_run
+    )
+
+    print(
+        "Total images in metadata:",
+        len(saved)
+    )
+
+    print(
+        "Images stored in:",
+        ORIGINAL
     )
 
     print(
@@ -814,24 +1553,40 @@ def main():
     )
 
     if color_only:
+
         print(
             "Skipped by color filter:",
             color_skips
         )
 
-    if len(saved) == 0:
+    if added_this_run == 0:
+
         print()
         print(
-            "No images were downloaded."
+            "No new images were downloaded."
         )
+
         print(
-            "The Met object API may also "
-            "be temporarily unavailable."
+            "Try broader keywords or filters."
         )
+
         return 2
+
+    print()
+    print(
+        "Run make_gallery.py to rebuild "
+        "the EO1 display collection."
+    )
 
     return 0
 
 
+# ============================================================
+# Entry point
+# ============================================================
+
 if __name__ == "__main__":
-    sys.exit(main())
+
+    sys.exit(
+        main()
+    )
