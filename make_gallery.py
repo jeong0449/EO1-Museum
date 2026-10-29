@@ -33,6 +33,7 @@ DST = ROOT / "display"
 
 W, H = 1080, 1920
 QUALITY = 90
+SERVER_ID = "EO1M-8F29C74A"
 
 EXTS = {
     ".jpg",
@@ -183,6 +184,7 @@ for n, src in enumerate(files, 1):
 # ============================================================
 
 js = (
+    f"// server-id: {SERVER_ID}\n"
     "var images = [\n"
     + "".join(
         f'  "{s.replace(chr(92), "/")}",\n'
