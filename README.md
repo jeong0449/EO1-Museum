@@ -4,8 +4,9 @@
 >
 > EO1 Museum has reached **v0.4**, extending the native Android gallery with
 > **Safe Sync between PC Gallery and the EO1's internal storage**.
-> Images prepared on the PC can now be transferred over Wi-Fi directly to
-> the Local Gallery, without using ADB or manually copying files.
+> Images prepared on the PC can now be **synchronized over Wi-Fi and stored locally
+> in the EO1's internal storage**, making them available to the Local Gallery
+> without using ADB or manually copying files.
 >
 > Sync is optional and controlled by the PC-side `server.py`. The EO1 checks
 > the server identity before syncing, respects configurable limits on media
