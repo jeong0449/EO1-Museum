@@ -1,4 +1,6 @@
-# Installation Guide
+# EO1-Museum Legacy Installation Guide
+
+_Firefox + MetBoot Browser-Based Architecture_
 
 This guide describes how to set up **EO1-Museum** on a PC and prepare an
 Electric Objects EO1 to display the gallery automatically.
