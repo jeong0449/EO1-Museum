@@ -28,8 +28,7 @@ EO1-Museum brings an Electric Objects EO1 back to life as a digital museum displ
 </p>
 
 <p align="center">
-  <em>
-  </em>
+  <em>Claude Monet, The Apple Tree (Le Pommier), 1879. Museum Barberini, Potsdam (Hasso Plattner Collection).</em>
 </p>
 
 ## Original Browser-Based Architecture
