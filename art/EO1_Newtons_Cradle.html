@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Newton's Cradle — Conservation of Motion</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#020308}
+body{display:grid;place-items:center}
+canvas{height:100vh;width:auto;max-width:100vw;display:block;background:#020308}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const c=document.getElementById("c"),x=c.getContext("2d");
+const W=1080,H=1920,CX=W/2;
+let paused=false,t0=performance.now(),last=t0;
+const N=5, R=74, spacing=148, pivotY=470, L=520;
+const pivots=Array.from({length:N},(_,i)=>CX+(i-(N-1)/2)*spacing);
+let mode=1, nextMode=18, phase=0, pulses=[], trails=[], lastImpactSegment=-1;
+let hue=190;
+const SCROLL_SPEED=18; // pixels per second, top -> bottom
+
+function bg(t){
+  const g=x.createRadialGradient(CX,700,40,CX,850,900);
+  g.addColorStop(0,`hsla(${(hue+20)%360},55%,12%,1)`);
+  g.addColorStop(.45,"#050814"); g.addColorStop(1,"#010207");
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  // faint vertical energy dust
+  x.globalAlpha=.22;
+  for(let i=0;i<45;i++){
+    const yy=(i*173+t*12*(1+i%3))%H;
+    const xx=(i*239)%W;
+    x.fillStyle=`hsl(${(hue+i*7)%360},80%,65%)`;
+    x.fillRect(xx,yy,1.4,1.4);
+  }
+  x.globalAlpha=1;
+}
+function frame(){
+  x.save();
+  x.shadowBlur=24;x.shadowColor=`hsla(${hue},80%,60%,.25)`;
+  x.strokeStyle="rgba(185,205,225,.34)";x.lineWidth=10;
+  x.beginPath();x.moveTo(115,340);x.lineTo(965,340);x.stroke();
+  x.lineWidth=14;
+  x.beginPath();x.moveTo(145,340);x.lineTo(90,1120);x.moveTo(935,340);x.lineTo(990,1120);x.stroke();
+  x.lineWidth=8;x.beginPath();x.moveTo(65,1120);x.lineTo(1015,1120);x.stroke();
+  x.restore();
+}
+function pattern(tt){
+  // Ideal Newton's cradle with explicit impact transfer:
+  // left group falls -> impact at theta=0 -> right group immediately departs,
+  // then returns and transfers the motion back to the left.
+  const thetaMax=.70;
+  const g=9.81, lengthMeters=.72;
+  const w=Math.sqrt(g/lengthMeters);
+
+  // One quarter pendulum period: turning point -> center impact.
+  const quarter=Math.PI/(2*w);
+  const segment=Math.floor(tt/quarter);
+  const u=(tt-segment*quarter)*w; // 0 .. pi/2
+
+  let A=new Array(N).fill(0);
+  const state=segment%4;
+
+  if(state===0){
+    // LEFT: outer group falls toward the center.
+    const a=-thetaMax*Math.cos(u);
+    for(let i=0;i<mode;i++) A[i]=a;
+  }else if(state===1){
+    // RIGHT: immediately after impact, opposite group rises.
+    const a=thetaMax*Math.sin(u);
+    for(let i=0;i<mode;i++) A[N-1-i]=a;
+  }else if(state===2){
+    // RIGHT: returns toward the center.
+    const a=thetaMax*Math.cos(u);
+    for(let i=0;i<mode;i++) A[N-1-i]=a;
+  }else{
+    // LEFT: immediately after the return impact, left group rises.
+    const a=-thetaMax*Math.sin(u);
+    for(let i=0;i<mode;i++) A[i]=a;
+  }
+  return A;
+}
+function ball(i,a,t){
+  const px=pivots[i], bx=px+Math.sin(a)*L, by=pivotY+Math.cos(a)*L;
+  // trail
+  if(Math.abs(a)>.035) trails.push({x:bx,y:by,h:(hue+i*18)%360,life:1});
+  x.strokeStyle="rgba(190,215,230,.52)";x.lineWidth=4;
+  x.beginPath();x.moveTo(px,pivotY);x.lineTo(bx,by);x.stroke();
+  // glass/chrome sphere
+  const g=x.createRadialGradient(bx-R*.32,by-R*.38,8,bx,by,R);
+  g.addColorStop(0,"rgba(255,255,255,.98)");
+  g.addColorStop(.18,`hsla(${(hue+i*10)%360},85%,72%,.95)`);
+  g.addColorStop(.52,"rgba(60,82,110,.96)");
+  g.addColorStop(.78,"rgba(8,12,22,.98)");
+  g.addColorStop(1,`hsla(${(hue+150)%360},80%,45%,.9)`);
+  x.save();x.shadowBlur=30;x.shadowColor=`hsla(${hue},100%,65%,.42)`;
+  x.fillStyle=g;x.beginPath();x.arc(bx,by,R,0,Math.PI*2);x.fill();x.restore();
+
+}
+function drawTrails(){
+  x.save();x.globalCompositeOperation="lighter";
+  trails=trails.filter(p=>p.life>.025);
+  for(const p of trails){
+    x.globalAlpha=p.life*.20;x.fillStyle=`hsl(${p.h},100%,70%)`;
+    x.beginPath();x.arc(p.x,p.y,10*p.life,0,Math.PI*2);x.fill();p.life*=.94;
+  }
+  x.restore();
+  if(trails.length>900)trails.splice(0,trails.length-900);
+}
+function pulse(t){
+  // Impact occurs at the contact point between the stationary center pack
+  // and the group that is transferring momentum—not at the canvas center.
+  const thetaMax=.70, g=9.81, lengthMeters=.72;
+  const w=Math.sqrt(g/lengthMeters);
+  const quarter=Math.PI/(2*w);
+  const segment=Math.floor(t/quarter);
+  const u=(t-segment*quarter)*w;
+  const state=segment%4;
+
+  // Generate exactly one pulse when a moving group reaches theta = 0.
+  // states 0 and 2 are the inbound swings; their impacts occur at segment end.
+  if((state===0 || state===2) && u>1.50 && lastImpactSegment!==segment){
+    const fromLeft=(state===0);
+    // Adjacent balls touch at spacing ~= 2R.  The collision interface shifts
+    // according to how many balls are moving.
+    const leftContact=pivots[mode-1] + R;
+    const rightContact=pivots[N-mode] - R;
+    const ix=fromLeft ? leftContact : rightContact;
+    const iy=pivotY+L;
+    pulses.push({x:ix,y:iy,r:8,life:1,h:(hue+35)%360});
+    lastImpactSegment=segment;
+  }
+
+  x.save();x.globalCompositeOperation="lighter";
+  pulses=pulses.filter(p=>p.life>.02);
+  for(const p of pulses){
+    x.strokeStyle=`hsla(${p.h},100%,70%,${p.life*.62})`;
+    x.lineWidth=5*p.life;
+    x.beginPath();x.arc(p.x,p.y,p.r,0,Math.PI*2);x.stroke();
+    // small bright impact core
+    x.fillStyle=`hsla(${p.h},100%,82%,${p.life*.45})`;
+    x.beginPath();x.arc(p.x,p.y,7*p.life,0,Math.PI*2);x.fill();
+    p.r+=9;p.life*=.955;
+  }
+  x.restore();
+}
+function caption(){
+  x.textAlign="center";
+  x.fillStyle="rgba(225,235,245,.75)";
+  x.font="500 31px system-ui";x.fillText("NEWTON'S CRADLE",CX,1390);
+  x.fillStyle="rgba(160,180,205,.52)";x.font="22px system-ui";
+  x.fillText(`${mode} → ${mode}   ·   MOMENTUM / ENERGY`,CX,1432);
+}
+function loop(now){
+  requestAnimationFrame(loop); if(paused)return;
+  const t=(now-t0)/1000,dt=Math.min(.05,(now-last)/1000);last=now;
+  hue=(190+t*3)%360;
+  if(t>nextMode){ mode=mode%3+1; nextMode=t+16+Math.random()*10; }
+  bg(t);
+
+  // Slowly drift the entire artwork downward.
+  // Two copies are drawn one canvas-height apart, so when one exits
+  // at the bottom it re-enters seamlessly from the top.
+  const scrollY=(t*SCROLL_SPEED)%H;
+  for(const offset of [scrollY, scrollY-H]){
+    x.save();
+    x.translate(0,offset);
+    drawTrails(); frame();
+    const aa=pattern(t);
+    for(let i=0;i<N;i++) ball(i,aa[i],t);
+    pulse(t); caption();
+    x.restore();
+  }
+}
+requestAnimationFrame(loop);
+addEventListener("click",()=>paused=!paused);
+addEventListener("keydown",e=>{
+ if(e.code==="Space"){e.preventDefault();paused=!paused}
+ if(e.key.toLowerCase()==="f"){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+</script>
+</body>
+</html>
