@@ -1,0 +1,5 @@
+<resources>
+<string name="app_name">ADB Approval Helper</string>
+<string name="service_name">ADB Approval Helper</string>
+<string name="service_description">Approves the USB debugging authorization dialog when its exact ADB text is visible.</string>
+</resources>
