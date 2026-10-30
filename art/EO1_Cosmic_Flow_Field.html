@@ -16,6 +16,17 @@ canvas{display:block;width:auto;height:100vh;max-width:100vw;max-height:100vh;as
 (function(){
 "use strict";
 var c=document.getElementById("c"),ctx=c.getContext("2d");
+function fitEO1Canvas(){
+  var vw=window.innerWidth, vh=window.innerHeight;
+  var w=Math.min(vw, vh*1080/1920);
+  var h=w*1920/1080;
+  if(h>vh){h=vh;w=h*1080/1920;}
+  c.style.width=Math.round(w)+"px";
+  c.style.height=Math.round(h)+"px";
+}
+fitEO1Canvas();
+window.addEventListener("resize",fitEO1Canvas);
+
 var W=1080,H=1920,TAU=Math.PI*2;
 var N=850, particles=[], seed=73021, paused=false, last=0;
 

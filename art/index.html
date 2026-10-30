@@ -195,6 +195,11 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
       if (radio.checked) activate(i);
     });
   });
+
+  // Build the initial state immediately:
+  // Collision stays live; all other cards get thumbnail + Click to play.
+  const initial = Math.max(0, radios.findIndex(r => r.checked));
+  activate(initial);
 })();
 </script>
 </body>
