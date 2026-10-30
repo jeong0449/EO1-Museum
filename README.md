@@ -75,7 +75,7 @@ The current architecture and workflow are described in the sections below.
 
 ### Legacy Browser-Based Installation
 
-For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the original browser-based museum gallery, see the [Installation Guide](INSTALL.md).
+For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the original browser-based museum gallery, see the [Installation Guide](legacy/INSTALL_LEGACY.md).
 
 A prebuilt `MetBoot.apk` is included in the repository root for direct installation on the EO1. The complete Android Studio source code is also provided in the `MetBoot/` directory.
 
