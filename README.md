@@ -92,7 +92,7 @@ For the history of this architecture and its transition to the native EO1 Museum
 
 ## Museum Collections
 
-EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**.
+EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions will expand beyond conventional museum collections to include **space imagery provided by NASA**, **generative art created and rendered directly by EO1-Museum**, and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture, scientific imagery, and computational art.
 
 **The Met** provides a well-structured institutional collection with rich metadata. EO1-Museum can search its open-access collection using artist names, keywords, subjects, periods, cultures, and other metadata, making it particularly useful for systematic and curated discovery.
 
