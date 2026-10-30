@@ -67,7 +67,7 @@ The current architecture and workflow are described in the sections below.
 
 > **⚠️ Documentation under revision**
 >
-> The installation documentation is currently being revised for **EO1 Museum v0.4**. The existing [Installation Guide](INSTALL.md) primarily describes the earlier **Firefox + MetBoot browser-based architecture** and should therefore be regarded as a historical installation procedure rather than the current recommended setup.
+> The installation documentation is currently being revised for **EO1 Museum v0.4**. The existing [Installation Guide](legacy/INSTALL_LEGACY.md) primarily describes the earlier **Firefox + MetBoot browser-based architecture** and should therefore be regarded as a historical installation procedure rather than the current recommended setup.
 >
 > The current native EO1 Museum application no longer requires Firefox or MetBoot for normal operation. A revised installation procedure covering the native application, initial ADB setup, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync is being prepared.
 >
