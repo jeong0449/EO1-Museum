@@ -22,7 +22,7 @@
 > The EO1 still starts in **Local Gallery** mode and remains fully usable
 > without a PC or network connection after synchronization.
 
-EO1-Museum brings an Electric Objects EO1 back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
+EO1-Museum brings an [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
 
 <p align="center">
   <img src="images/sample_2.jpg" width="350" alt="Édouard Manet, Peonies, displayed on the EO1">
