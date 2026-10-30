@@ -24,8 +24,6 @@ header p{margin:0;color:var(--muted);font-size:16px;line-height:1.6}
 .meta strong{display:block;font-size:15px;font-weight:600}
 .meta span{display:block;color:var(--muted);font-size:13px;margin-top:5px;line-height:1.4}
 .badge{position:absolute;right:10px;top:10px;padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.58);backdrop-filter:blur(8px);font-size:11px;color:#d9dce3}
-.preview-toggle{display:flex;align-items:center;gap:7px;margin-top:10px;color:var(--muted);font-size:12px;cursor:pointer;width:max-content}
-.preview-toggle input{accent-color:#d9dce3}
 .play-overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.08);cursor:pointer}
 .play-overlay span{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);color:#f0f2f6;font-size:12px;letter-spacing:.02em;border:1px solid rgba(255,255,255,.16)}
 .play-overlay:hover span{background:rgba(0,0,0,.78);border-color:rgba(255,255,255,.34)}
@@ -59,10 +57,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Collision Trails — Glass Spheres</strong>
       <span>Elastic collisions, luminous trails, and glass-like spheres. Interactive controls are available on desktop screens.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="0" checked>
-        Live preview
-      </label>
     </div>
   </div>
   <div class="card" data-preview="EO1_Cosmic_Flow_Field.html" data-thumb="thumbs/EO1_Cosmic_Flow_Field.jpg" data-title="Cosmic Flow Field">
@@ -75,10 +69,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Cosmic Flow Field</strong>
       <span>Particles drifting through a slowly changing vector field.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="1">
-        Live preview
-      </label>
     </div>
   </div>
   <div class="card" data-preview="EO1_Infinite_Spiral_Zoom.html" data-thumb="thumbs/EO1_Infinite_Spiral_Zoom.jpg" data-title="Infinite Spiral Zoom">
@@ -91,10 +81,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Infinite Spiral Zoom</strong>
       <span>A recursive spiral journey with a gently wandering center.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="2">
-        Live preview
-      </label>
     </div>
   </div>
   <div class="card" data-preview="EO1_Space_Jellyfish.html" data-thumb="thumbs/EO1_Space_Jellyfish.jpg" data-title="Space Jellyfish">
@@ -107,10 +93,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Space Jellyfish</strong>
       <span>Translucent forms drifting through a quiet field of stars.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="3">
-        Live preview
-      </label>
     </div>
   </div>
   <div class="card" data-preview="EO1_Neon_Wireframe_Dreamscape_Animated.html" data-thumb="thumbs/EO1_Neon_Wireframe_Dreamscape_Animated.jpg" data-title="Neon Wireframe Dreamscape">
@@ -123,10 +105,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Neon Wireframe Dreamscape</strong>
       <span>A retro-futuristic landscape of rotating wireframes, a flowing perspective grid, and a full-spectrum cycling sun.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="4">
-        Live preview
-      </label>
     </div>
   </div>
   <div class="card" data-preview="EO1_Newtons_Cradle.html" data-thumb="thumbs/EO1_Newtons_Cradle.jpg" data-title="Newton's Cradle — Conservation of Motion">
@@ -139,10 +117,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     <div class="meta">
       <strong>Newton's Cradle — Conservation of Motion</strong>
       <span>A luminous Newton's cradle with pendulum-like motion, impact pulses, shifting collision patterns, and a slow vertical drift.</span>
-      <label class="preview-toggle">
-        <input type="radio" name="live-preview" value="5">
-        Live preview
-      </label>
     </div>
   </div>
 </main>
@@ -152,7 +126,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
 <script>
 (() => {
   const cards = [...document.querySelectorAll(".card[data-preview]")];
-  const radios = [...document.querySelectorAll('input[name="live-preview"]')];
 
   function showStill(card, index) {
     const frame = card.querySelector(".frame");
@@ -169,7 +142,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     play.addEventListener("click", e => {
       e.preventDefault();
       e.stopPropagation();
-      radios[index].checked = true;
       activate(index);
     });
     frame.appendChild(play);
@@ -190,16 +162,8 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     cards.forEach((card, i) => i === index ? showLive(card) : showStill(card, i));
   }
 
-  radios.forEach((radio, i) => {
-    radio.addEventListener("change", () => {
-      if (radio.checked) activate(i);
-    });
-  });
-
-  // Build the initial state immediately:
-  // Collision stays live; all other cards get thumbnail + Click to play.
-  const initial = Math.max(0, radios.findIndex(r => r.checked));
-  activate(initial);
+  // Collision Trails is live by default.
+  activate(0);
 })();
 </script>
 </body>
