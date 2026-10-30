@@ -131,27 +131,11 @@ This provided an important starting point for EO1-Museum: the realization that t
 
 ### eo1-workaround — Christian Boyle
 
-Christian Boyle's [eo1-workaround](https://github.com/christianboyle/eo1-workaround) provided a practical way to bring an EO1 back to life after the original Electric Objects service was discontinued.
+Christian Boyle's [eo1-workaround](https://github.com/christianboyle/eo1-workaround) provided a practical approach to reviving an EO1 after the original Electric Objects service was discontinued.
 
-It builds on the same basic access method—USB OTG, keyboard and mouse, and the Android environment—but uses Firefox and locally controlled web content to turn the EO1 into an independent image display.
+His work demonstrated how Firefox and locally controlled web content could be used to restore the EO1 as a functional image display without relying on the original online service. This approach directly influenced the first stable, browser-based version of EO1-Museum and helped establish the basic idea of serving independently controlled content to the EO1 over a local network.
 
-This approach directly influenced the first stable version of EO1-Museum. Firefox was particularly useful because it could display the gallery using the Fullscreen API, while a small Android helper, MetBoot, was used to launch Firefox automatically after boot.
-
-The resulting early architecture was:
-
-```text
-Android
-   ↓
-MetBoot
-   ↓
-Firefox
-   ↓
-PC HTTP server
-   ↓
-EO1-Museum web gallery
-```
-
-This was the first configuration that allowed the EO1 to function again as a practical art display without depending on the original Electric Objects service.
+The browser-based architecture that grew from this approach is described above, and its later evolution into the native EO1 Museum application is documented in [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 
 ### EO1 Android Source — spalt/EO1
 
