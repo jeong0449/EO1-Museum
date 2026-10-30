@@ -50,6 +50,26 @@ function avoidAll(dt){
     else if(sp<min && sp>.00001){j.vx*=1.0015;j.vy*=1.0015}
   });
 }
-function upd(j,dt){j.x+=j.vx*dt;j.y+=j.vy*dt;j.r+=j.rs*dt;let m=j.s*2.4;if(j.x<-m)j.x=W+m;if(j.x>W+m)j.x=-m;if(j.y<-m)j.y=H+m;if(j.y>H+m)j.y=-m}
+function reenter(j){
+  // After fully leaving the canvas, re-enter from a randomly chosen edge
+  // with a gentle inward trajectory. This avoids obvious wrap-around repetition.
+  let m=j.s*2.4, edge=Math.floor(rnd()*4), sp=R(.010,.023), along=R(-.006,.006);
+  if(edge===0){ // left
+    j.x=-m; j.y=R(-j.s,H+j.s); j.vx=sp; j.vy=along;
+  }else if(edge===1){ // right
+    j.x=W+m; j.y=R(-j.s,H+j.s); j.vx=-sp; j.vy=along;
+  }else if(edge===2){ // top
+    j.x=R(-j.s,W+j.s); j.y=-m; j.vx=along; j.vy=sp;
+  }else{ // bottom
+    j.x=R(-j.s,W+j.s); j.y=H+m; j.vx=along; j.vy=-sp;
+  }
+  j.r=R(-.18,.18);
+  j.rs=R(-.000035,.000035);
+}
+function upd(j,dt){
+  j.x+=j.vx*dt;j.y+=j.vy*dt;j.r+=j.rs*dt;
+  let m=j.s*2.4;
+  if(j.x<-m || j.x>W+m || j.y<-m || j.y>H+m) reenter(j);
+}
 let last=0,pause=false;function frame(t){if(!last)last=t;let dt=Math.min(40,t-last);last=t;space(t);if(!pause)avoidAll(dt);js.sort((a,b)=>a.d-b.d);js.forEach(j=>{if(!pause)upd(j,dt);draw(j,t)});requestAnimationFrame(frame)}c.addEventListener("click",()=>pause=!pause);requestAnimationFrame(frame);
 })();</script></body></html>
