@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>EO1 Infinite Spiral Zoom</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#02030a}
+canvas{display:block;width:100vw;height:100vh;background:#02030a}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById("c"),ctx=c.getContext("2d");
+var W=1080,H=1920,TAU=Math.PI*2;
+var start=performance.now(),paused=false,pauseAt=0;
+var LEVELS=8,SCALE_RATIO=2.15,ZOOM_PERIOD=32000,ARMS=5,POINTS=330;
+
+function centerAt(t){
+  // Slow, non-repeating-looking Lissajous drift.
+  // The center stays comfortably away from the edges.
+  return {
+    x: W/2 + Math.sin(t*0.000071)*115 + Math.sin(t*0.000023+1.7)*42,
+    y: H/2 + Math.sin(t*0.000053+0.8)*185 + Math.sin(t*0.000019+3.1)*58
+  };
+}
+
+function spiralPath(cx,cy,scale,rot,hue,alpha,lineWidth,t){
+  var maxTheta=TAU*4.2;
+  ctx.beginPath();
+  for(var i=0;i<POINTS;i++){
+    var u=i/(POINTS-1),th=u*maxTheta+rot;
+    var r=scale*(1-u)*(.93+.07*Math.sin(th*3+t*.00022));
+    r*=1+.055*Math.sin(th*7+Math.sin(th*2)*1.7);
+    var xx=cx+Math.cos(th)*r, yy=cy+Math.sin(th)*r;
+    if(i===0)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy);
+  }
+  ctx.strokeStyle="hsla("+hue+",86%,64%,"+alpha+")";
+  ctx.lineWidth=lineWidth;
+  ctx.shadowColor="hsla("+hue+",92%,58%,"+(alpha*.52)+")";
+  ctx.shadowBlur=6+lineWidth*1.4;
+  ctx.stroke();
+}
+
+function draw(t){
+  ctx.fillStyle="#02030a";ctx.fillRect(0,0,W,H);
+  var cc=centerAt(t),cx=cc.x,cy=cc.y;
+
+  // Broad, dim depth glow follows the moving center; no fixed hot pixel.
+  var bg=ctx.createRadialGradient(cx,cy,0,cx,cy,820);
+  bg.addColorStop(0,"rgba(22,28,58,.105)");
+  bg.addColorStop(.48,"rgba(9,14,31,.055)");
+  bg.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+
+  var phase=((t-start)%ZOOM_PERIOD)/ZOOM_PERIOD;
+  var zoom=Math.pow(SCALE_RATIO,phase);
+  var slowRot=t*.000025;
+  var hueBase=(t*.0017)%360;
+
+  for(var lev=-1;lev<LEVELS;lev++){
+    var scale=760*zoom/Math.pow(SCALE_RATIO,lev);
+    if(scale<2||scale>4200)continue;
+    var vis=Math.min(1,scale/80)*Math.min(1,3000/scale);
+    for(var arm=0;arm<ARMS;arm++){
+      var rot=slowRot+arm*TAU/ARMS+lev*.37;
+      var hue=(hueBase+arm*22+lev*17+360)%360;
+      spiralPath(cx,cy,scale,rot,hue,.095+.19*vis,.85+1.25*vis,t);
+    }
+  }
+
+  // Very faint nested rings move with the center.
+  ctx.shadowBlur=0;
+  for(var k=0;k<7;k++){
+    var rr=520*zoom/Math.pow(SCALE_RATIO,k);
+    if(rr>5&&rr<1500){
+      ctx.beginPath();ctx.arc(cx,cy,rr,0,TAU);
+      ctx.strokeStyle="hsla("+((hueBase+k*25)%360)+",70%,65%,.026)";
+      ctx.lineWidth=1;ctx.stroke();
+    }
+  }
+
+  // Deliberately no bright central seed.
+  requestAnimationFrame(frame);
+}
+
+function frame(t){draw(paused?pauseAt:t)}
+c.addEventListener("click",function(){
+  if(!paused){paused=true;pauseAt=performance.now();}
+  else{var now=performance.now();start+=now-pauseAt;paused=false;}
+});
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

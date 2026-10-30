@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EO1 Collision Trails — Glass Sphere Edition</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#111;color:#eee;font:16px system-ui}.app{display:grid;grid-template-columns:300px minmax(300px,540px);gap:24px;justify-content:center;padding:24px}.panel{padding:18px;border:1px solid #444;border-radius:12px}.buttons{display:flex;gap:8px;flex-wrap:wrap}button{padding:9px 14px;background:#282828;color:#fff;border:1px solid #555;border-radius:8px}label{display:block;margin:16px 0}label span{float:right;font-family:monospace}input[type=range]{width:100%}.frame{width:100%;aspect-ratio:9/16;border:1px solid #444;border-radius:10px;overflow:hidden;background:#050505}canvas{width:100%;height:100%;display:block}.note{font-size:14px;color:#aaa}@media(max-width:760px){.app{grid-template-columns:1fr}.frame{max-width:540px;margin:auto}}</style></head>
+<body><div class="app"><section class="panel"><div class="buttons"><button id="pause">Pause</button><button id="restart">Restart</button><button id="random">Randomize</button></div>
+<label>Balls <span id="bv">8</span><input id="balls" type="range" min="1" max="30" value="8"></label>
+<label>Speed <span id="sv">1.0</span><input id="speed" type="range" min="20" max="300" value="100"></label>
+<label>Ball size <span id="zv">12</span><input id="size" type="range" min="3" max="35" value="12"></label>
+<label>Trail persistence <span id="tv">96%</span><input id="trail" type="range" min="75" max="100" value="96"></label>
+<label>Collision flash <span id="fv">1.0</span><input id="flash" type="range" min="0" max="200" value="100"></label>
+<label><input id="collisions" type="checkbox" checked> Ball-to-ball elastic collisions</label>
+<label><input id="sphere" type="checkbox" checked> 3D sphere rendering</label>
+<label>Seed <input id="seed" type="number" value="48372" min="1" max="999999999"></label>
+<p class="note">EO1 9:16 generative motion study · elastic ball collisions · collision flashes · persistent trails</p></section>
+<section class="frame"><canvas id="c" width="540" height="960"></canvas></section></div>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d'),E=id=>document.getElementById(id);
+let B=[],F=[],run=true,raf,last=0;
+function R(s){return()=>((s=(s*1664525+1013904223)>>>0)/4294967296)}
+function flash(px,py,h,p){let q=+E('flash').value/100*p;if(q)F.push({x:px,y:py,h,life:1,q})}
+function init(){let r=R(Math.max(1,+E('seed').value||1)),n=+E('balls').value,d=+E('size').value;B=[];F=[];
+ for(let i=0;i<n;i++){let px,py,k=0;do{px=d+r()*(c.width-2*d);py=d+r()*(c.height-2*d)}while(++k<100&&B.some(b=>Math.hypot(b.x-px,b.y-py)<2.2*d));let a=r()*Math.PI*2;B.push({x:px,y:py,vx:Math.cos(a)*(.55+r()*1.15),vy:Math.sin(a)*(.55+r()*1.15),h:r()*360})}
+ x.fillStyle='#050505';x.fillRect(0,0,c.width,c.height);last=0}
+function hit(a,b,d){let dx=b.x-a.x,dy=b.y-a.y,q=dx*dx+dy*dy,m=2*d;if(q<=0||q>=m*m)return;let z=Math.sqrt(q),nx=dx/z,ny=dy/z,o=m-z;a.x-=nx*o/2;a.y-=ny*o/2;b.x+=nx*o/2;b.y+=ny*o/2;let rel=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;if(rel>=0)return;a.vx+=rel*nx;a.vy+=rel*ny;b.vx-=rel*nx;b.vy-=rel*ny;flash((a.x+b.x)/2,(a.y+b.y)/2,(a.h+b.h)/2,1.15);a.h=(a.h+17)%360;b.h=(b.h+31)%360}
+function wall(b,d){let h=0;if(b.x<=d){b.x=d;b.vx=Math.abs(b.vx);h=1}if(b.x>=c.width-d){b.x=c.width-d;b.vx=-Math.abs(b.vx);h=1}if(b.y<=d){b.y=d;b.vy=Math.abs(b.vy);h=1}if(b.y>=c.height-d){b.y=c.height-d;b.vy=-Math.abs(b.vy);h=1}if(h){flash(b.x,b.y,b.h,.48);b.h=(b.h+37)%360}}
+function drawF(dt){for(let i=F.length-1;i>=0;i--){let f=F[i];f.life-=.075*dt;if(f.life<=0){F.splice(i,1);continue}let rr=(1-f.life)*58*f.q+8,g=x.createRadialGradient(f.x,f.y,0,f.x,f.y,rr);g.addColorStop(0,`rgba(255,255,255,${Math.min(.95,f.life*f.q)})`);g.addColorStop(.22,`hsla(${f.h},90%,75%,${f.life*.7})`);g.addColorStop(1,`hsla(${f.h},90%,60%,0)`);x.fillStyle=g;x.beginPath();x.arc(f.x,f.y,rr,0,7);x.fill()}}
+function frame(t){if(!run)return;let dt=Math.min(2,(t-last)/16.667||1);last=t;let p=+E('trail').value/100;if(p<1){x.fillStyle=`rgba(5,5,5,${Math.max(.004,1-p)})`;x.fillRect(0,0,c.width,c.height)}let s=+E('speed').value/100,d=+E('size').value,O=B.map(b=>({x:b.x,y:b.y}));B.forEach(b=>{b.x+=b.vx*s*dt*3;b.y+=b.vy*s*dt*3;wall(b,d)});if(E('collisions').checked)for(let i=0;i<B.length;i++)for(let j=i+1;j<B.length;j++)hit(B[i],B[j],d);B.forEach((b,i)=>{x.beginPath();x.moveTo(O[i].x,O[i].y);x.lineTo(b.x,b.y);x.strokeStyle=`hsla(${b.h},70%,68%,.55)`;x.lineWidth=Math.max(1,d*.38);x.stroke();if(E('sphere').checked){
+ x.save();x.beginPath();x.arc(b.x,b.y,d,0,Math.PI*2);x.clip();
+ let g=x.createRadialGradient(b.x-d*.42,b.y-d*.46,d*.04,b.x+d*.14,b.y+d*.16,d*1.22);
+ g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.12,`hsla(${b.h},96%,88%,1)`);
+ g.addColorStop(.32,`hsla(${b.h},90%,68%,1)`);g.addColorStop(.58,`hsla(${b.h},82%,45%,1)`);
+ g.addColorStop(.78,`hsla(${b.h},78%,24%,1)`);g.addColorStop(.94,`hsla(${b.h},72%,8%,1)`);g.addColorStop(1,'rgba(0,0,0,1)');
+ x.fillStyle=g;x.fillRect(b.x-d,b.y-d,d*2,d*2);x.restore();
+ x.beginPath();x.arc(b.x-d*.38,b.y-d*.42,Math.max(1.5,d*.14),0,Math.PI*2);x.fillStyle='rgba(255,255,255,.98)';x.fill();
+ x.beginPath();x.arc(b.x-d*.16,b.y-d*.57,Math.max(.8,d*.055),0,Math.PI*2);x.fillStyle='rgba(255,255,255,.75)';x.fill();
+ x.beginPath();x.arc(b.x,b.y,d,0,Math.PI*2);x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=Math.max(1,d*.10);x.stroke();
+}else{x.beginPath();x.arc(b.x,b.y,d,0,Math.PI*2);x.fillStyle=`hsla(${b.h},75%,65%,.82)`;x.fill()}});drawF(dt);raf=requestAnimationFrame(frame)}
+function labels(){E('bv').textContent=E('balls').value;E('sv').textContent=(+E('speed').value/100).toFixed(1);E('zv').textContent=E('size').value;E('tv').textContent=E('trail').value+'%';E('fv').textContent=(+E('flash').value/100).toFixed(1)}
+function start(){cancelAnimationFrame(raf);run=true;E('pause').textContent='Pause';last=0;raf=requestAnimationFrame(frame)}
+function restart(){init();start()}
+['balls','size'].forEach(id=>E(id).addEventListener('input',()=>{labels();restart()}));['speed','trail','flash'].forEach(id=>E(id).addEventListener('input',labels));E('seed').addEventListener('change',restart);E('restart').onclick=restart;E('random').onclick=()=>{E('seed').value=1+Math.floor(Math.random()*999999998);restart()};E('pause').onclick=()=>{run=!run;if(run)start();else{cancelAnimationFrame(raf);E('pause').textContent='Resume'}};labels();init();start();
+</script></body></html>

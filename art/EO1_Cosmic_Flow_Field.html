@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>EO1 Cosmic Flow Field</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#02040a}
+canvas{display:block;width:100vw;height:100vh;background:#02040a}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById("c"),ctx=c.getContext("2d");
+var W=1080,H=1920,TAU=Math.PI*2;
+var N=850, particles=[], seed=73021, paused=false, last=0;
+
+function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function R(a,b){return a+(b-a)*rnd()}
+
+function reset(p,randomAge){
+  p.x=R(0,W); p.y=R(0,H);
+  p.px=p.x; p.py=p.y;
+  p.age=randomAge?Math.floor(R(0,650)):0;
+  p.life=Math.floor(R(360,900));
+  p.speed=R(.24,.72);
+  p.hue=R(175,225);
+  p.alpha=R(.16,.42);
+  p.width=R(.65,1.75);
+}
+for(var i=0;i<N;i++){var p={};reset(p,true);particles.push(p)}
+
+function field(x,y,t){
+  // Layered continuous vector field: broad curls plus fine eddies.
+  var nx=(x-W*.5)/W, ny=(y-H*.5)/H;
+  var a=
+    Math.sin(nx*7.1 + t*.000045)*1.05 +
+    Math.cos(ny*8.7 - t*.000033)*.92 +
+    Math.sin((nx+ny)*5.3 + t*.000021)*.70 +
+    Math.cos(Math.sqrt(nx*nx+ny*ny)*15.0 - t*.000026)*.42;
+  // A weak, slowly wandering vortex prevents the field becoming too stripe-like.
+  var cx=.18*Math.sin(t*.000019), cy=.14*Math.sin(t*.000014+1.7);
+  var dx=nx-cx,dy=ny-cy,dist=Math.sqrt(dx*dx+dy*dy)+.035;
+  a += Math.atan2(dy,dx)*.32 + .42/dist;
+  return a;
+}
+
+function background(t){
+  // Very slow fade leaves persistent luminous trails.
+  ctx.fillStyle="rgba(2,4,10,0.045)";
+  ctx.fillRect(0,0,W,H);
+
+  // Extremely dim moving haze; no fixed bright center.
+  var cx=W*(.5+.18*Math.sin(t*.000013));
+  var cy=H*(.5+.16*Math.sin(t*.000017+1.4));
+  var g=ctx.createRadialGradient(cx,cy,0,cx,cy,760);
+  g.addColorStop(0,"rgba(25,45,75,.010)");
+  g.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+
+function frame(t){
+  if(!last){last=t;ctx.fillStyle="#02040a";ctx.fillRect(0,0,W,H)}
+  var dt=Math.min(34,t-last);last=t;
+  if(!paused){
+    background(t);
+    ctx.lineCap="round";
+    for(var i=0;i<N;i++){
+      var p=particles[i];
+      p.px=p.x;p.py=p.y;
+      var a=field(p.x,p.y,t);
+      var step=p.speed*dt*.18;
+      p.x+=Math.cos(a)*step;
+      p.y+=Math.sin(a)*step;
+      p.age++;
+
+      if(p.x<-12||p.x>W+12||p.y<-12||p.y>H+12||p.age>p.life){
+        reset(p,false);continue;
+      }
+
+      var lifeFade=Math.min(1,p.age/45)*Math.min(1,(p.life-p.age)/65);
+      ctx.beginPath();ctx.moveTo(p.px,p.py);ctx.lineTo(p.x,p.y);
+      ctx.strokeStyle="hsla("+p.hue+",92%,80%,"+(p.alpha*lifeFade)+")";
+      ctx.lineWidth=p.width;
+      ctx.stroke();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+c.addEventListener("click",function(){paused=!paused});
+ctx.fillStyle="#02040a";ctx.fillRect(0,0,W,H);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

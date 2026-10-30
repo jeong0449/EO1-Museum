@@ -1,0 +1,75 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>EO1 Space Jellyfish</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#02040c}canvas{display:block;width:100vw;height:100vh}</style></head><body>
+<canvas id="c" width="1080" height="1920"></canvas><script>
+(()=>{"use strict";const c=document.getElementById("c"),x=c.getContext("2d"),W=1080,H=1920,T=Math.PI*2;
+let seed=260103;const rnd=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296),R=(a,b)=>a+(b-a)*rnd();
+const stars=Array.from({length:230},()=>({x:R(0,W),y:R(0,H),r:R(.4,2),a:R(.2,.8),p:R(0,T),s:R(.4,1.7)}));
+const neb=[{x:170,y:430,r:480,c:"40,70,150",a:.10},{x:880,y:1050,r:570,c:"90,35,145",a:.085},{x:300,y:1650,r:520,c:"20,115,130",a:.065}];
+function make(x0,y,s,h,vx,vy,p,d){let ts=[];for(let i=0,n=Math.round(R(8,13));i<n;i++)ts.push({o:(i/(n-1)-.5)*1.42,l:R(1.65,2.75),a:R(.09,.22),f:R(1.2,2.3),p:R(0,T),w:R(1.3,3)});return{x:x0,y,s,h,vx,vy,p,d,r:R(-.18,.18),rs:R(-.000035,.000035),ts}}
+let js=[make(300,370,155,190,.010,.018,.2,1),make(790,780,215,205,-.012,.010,1.7,1.1),make(330,1250,120,278,.014,-.009,3.1,.78),make(760,1540,175,168,-.010,-.012,4.2,.92),make(170,1780,82,220,.018,-.015,5,.6)];
+function space(t){x.fillStyle="#02040c";x.fillRect(0,0,W,H);neb.forEach(q=>{let g=x.createRadialGradient(q.x,q.y,0,q.x,q.y,q.r);g.addColorStop(0,`rgba(${q.c},${q.a})`);g.addColorStop(.42,`rgba(${q.c},${q.a*.42})`);g.addColorStop(1,`rgba(${q.c},0)`);x.fillStyle=g;x.fillRect(q.x-q.r,q.y-q.r,q.r*2,q.r*2)});stars.forEach(s=>{let a=s.a*(.72+.28*Math.sin(t*.001*s.s+s.p));x.beginPath();x.arc(s.x,s.y,s.r,0,T);x.fillStyle=`rgba(215,235,255,${a})`;x.fill()})}
+function tent(j,q,i,t,b){let bx=q.o*j.s*.68,by=j.s*.22,L=j.s*q.l;x.beginPath();for(let k=0;k<=22;k++){let p=k/22,sw=Math.sin(p*q.f*Math.PI+t*.00115+q.p+i*.17)*q.a*j.s*Math.sin(p*Math.PI)+Math.sin(t*.00043+q.p)*j.s*.055*p,xx=bx*(1-.28*p)+sw,yy=by+L*p*(.91+.09*b);k?x.lineTo(xx,yy):x.moveTo(xx,yy)}x.lineWidth=q.w*j.d;x.strokeStyle=`hsla(${j.h},95%,78%,${.16+.14*j.d})`;x.shadowColor=`hsla(${j.h},100%,70%,.55)`;x.shadowBlur=11*j.d;x.stroke()}
+function draw(j,t){let b=.5+.5*Math.sin(t*.00115+j.p);x.save();x.translate(j.x,j.y);x.rotate(j.r);x.scale(.94+.075*b,1.04-.10*b);j.ts.forEach((q,i)=>tent(j,q,i,t,b));
+for(let a=-2;a<=2;a++){x.beginPath();x.moveTo(a*j.s*.13,j.s*.16);x.bezierCurveTo(a*j.s*.17+Math.sin(t*.001+a)*j.s*.08,j.s*.52,a*j.s*.10-Math.cos(t*.0008+a)*j.s*.11,j.s*.82,a*j.s*.07,j.s*1.08);x.lineWidth=j.s*.035;x.strokeStyle=`hsla(${j.h+12},95%,82%,.12)`;x.shadowColor=`hsla(${j.h},100%,72%,.45)`;x.shadowBlur=13;x.stroke()}
+let g=x.createRadialGradient(-j.s*.25,-j.s*.34,j.s*.04,0,-j.s*.10,j.s*1.05);g.addColorStop(0,`hsla(${j.h-8},100%,94%,.88)`);g.addColorStop(.16,`hsla(${j.h},100%,82%,.46)`);g.addColorStop(.55,`hsla(${j.h+12},90%,62%,.16)`);g.addColorStop(1,`hsla(${j.h},100%,50%,.015)`);
+x.beginPath();x.moveTo(-j.s*.82,j.s*.12);x.bezierCurveTo(-j.s*.78,-j.s*.72,-j.s*.38,-j.s*.96,0,-j.s*.98);x.bezierCurveTo(j.s*.38,-j.s*.96,j.s*.78,-j.s*.72,j.s*.82,j.s*.12);x.bezierCurveTo(j.s*.50,j.s*.27,j.s*.24,j.s*.16,0,j.s*.23);x.bezierCurveTo(-j.s*.24,j.s*.16,-j.s*.50,j.s*.27,-j.s*.82,j.s*.12);x.closePath();x.fillStyle=g;x.shadowColor=`hsla(${j.h},100%,65%,.62)`;x.shadowBlur=38*j.d;x.fill();
+x.shadowBlur=0;x.beginPath();x.moveTo(-j.s*.78,j.s*.10);x.bezierCurveTo(-j.s*.46,j.s*.31,-j.s*.22,j.s*.16,0,j.s*.24);x.bezierCurveTo(j.s*.22,j.s*.16,j.s*.46,j.s*.31,j.s*.78,j.s*.10);x.strokeStyle=`hsla(${j.h+18},85%,68%,.38)`;x.lineWidth=Math.max(2,j.s*.025);x.stroke();
+for(let r=-3;r<=3;r++){x.beginPath();x.moveTo(r*j.s*.10,-j.s*.66);x.quadraticCurveTo(r*j.s*.17,-j.s*.20,r*j.s*.22,j.s*.08);x.strokeStyle=`hsla(${j.h-5},100%,90%,.10)`;x.lineWidth=Math.max(1,j.s*.01);x.stroke()}
+let hi=x.createRadialGradient(-j.s*.30,-j.s*.47,0,-j.s*.30,-j.s*.47,j.s*.34);hi.addColorStop(0,"rgba(255,255,255,.56)");hi.addColorStop(.22,"rgba(220,250,255,.20)");hi.addColorStop(1,"rgba(255,255,255,0)");x.fillStyle=hi;x.beginPath();x.ellipse(-j.s*.25,-j.s*.42,j.s*.38,j.s*.24,-.35,0,T);x.fill();x.restore()}
+function avoidAll(dt){
+  // Gentle separation: bells avoid one another, while tentacles may overlap.
+  // Velocity changes are deliberately small so the motion stays jellyfish-like.
+  for(let i=0;i<js.length;i++){
+    for(let k=i+1;k<js.length;k++){
+      let a=js[i],b=js[k],dx=b.x-a.x,dy=b.y-a.y;
+      let d2=dx*dx+dy*dy;
+      let safe=(a.s+b.s)*0.92;
+      if(d2>0.001 && d2<safe*safe){
+        let d=Math.sqrt(d2),nx=dx/d,ny=dy/d;
+        let closeness=1-d/safe;
+        let push=0.000018*closeness*closeness*dt;
+        a.vx-=nx*push; a.vy-=ny*push;
+        b.vx+=nx*push; b.vy+=ny*push;
+
+        // If the bells get too close, add a tiny positional correction.
+        let hard=(a.s+b.s)*0.62;
+        if(d<hard){
+          let corr=(hard-d)*0.008;
+          a.x-=nx*corr; a.y-=ny*corr;
+          b.x+=nx*corr; b.y+=ny*corr;
+        }
+      }
+    }
+  }
+
+  // Keep speeds slow and restore them gently toward a natural cruising range.
+  js.forEach(j=>{
+    let sp=Math.sqrt(j.vx*j.vx+j.vy*j.vy);
+    let max=.026, min=.009;
+    if(sp>max){j.vx*=max/sp;j.vy*=max/sp}
+    else if(sp<min && sp>.00001){j.vx*=1.0015;j.vy*=1.0015}
+  });
+}
+function reenter(j){
+  // After fully leaving the canvas, re-enter from a randomly chosen edge
+  // with a gentle inward trajectory. This avoids obvious wrap-around repetition.
+  let m=j.s*2.4, edge=Math.floor(rnd()*4), sp=R(.010,.023), along=R(-.006,.006);
+  if(edge===0){ // left
+    j.x=-m; j.y=R(-j.s,H+j.s); j.vx=sp; j.vy=along;
+  }else if(edge===1){ // right
+    j.x=W+m; j.y=R(-j.s,H+j.s); j.vx=-sp; j.vy=along;
+  }else if(edge===2){ // top
+    j.x=R(-j.s,W+j.s); j.y=-m; j.vx=along; j.vy=sp;
+  }else{ // bottom
+    j.x=R(-j.s,W+j.s); j.y=H+m; j.vx=along; j.vy=-sp;
+  }
+  j.r=R(-.18,.18);
+  j.rs=R(-.000035,.000035);
+}
+function upd(j,dt){
+  j.x+=j.vx*dt;j.y+=j.vy*dt;j.r+=j.rs*dt;
+  let m=j.s*2.4;
+  if(j.x<-m || j.x>W+m || j.y<-m || j.y>H+m) reenter(j);
+}
+let last=0,pause=false;function frame(t){if(!last)last=t;let dt=Math.min(40,t-last);last=t;space(t);if(!pause)avoidAll(dt);js.sort((a,b)=>a.d-b.d);js.forEach(j=>{if(!pause)upd(j,dt);draw(j,t)});requestAnimationFrame(frame)}c.addEventListener("click",()=>pause=!pause);requestAnimationFrame(frame);
+})();</script></body></html>
