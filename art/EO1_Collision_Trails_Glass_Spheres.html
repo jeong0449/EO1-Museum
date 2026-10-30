@@ -1,6 +1,35 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EO1 Collision Trails — Glass Sphere Edition</title>
-<style>*{box-sizing:border-box}body{margin:0;background:#111;color:#eee;font:16px system-ui}.app{display:grid;grid-template-columns:300px minmax(300px,540px);gap:24px;justify-content:center;padding:24px}.panel{padding:18px;border:1px solid #444;border-radius:12px}.buttons{display:flex;gap:8px;flex-wrap:wrap}button{padding:9px 14px;background:#282828;color:#fff;border:1px solid #555;border-radius:8px}label{display:block;margin:16px 0}label span{float:right;font-family:monospace}input[type=range]{width:100%}.frame{width:100%;aspect-ratio:9/16;border:1px solid #444;border-radius:10px;overflow:hidden;background:#050505}canvas{width:100%;height:100%;display:block}.note{font-size:14px;color:#aaa}@media(max-width:760px){.app{grid-template-columns:1fr}.frame{max-width:540px;margin:auto}}</style></head>
-<body><div class="app"><section class="panel"><div class="buttons"><button id="pause">Pause</button><button id="restart">Restart</button><button id="random">Randomize</button></div>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;min-height:100%;background:#090a0d;color:#eee;font:16px system-ui,-apple-system,"Segoe UI",sans-serif}
+body{overflow:auto}
+.app{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:28px;padding:24px}
+.frame{height:min(calc(100vh - 48px),960px);aspect-ratio:9/16;flex:none;border:1px solid #2b2f38;border-radius:12px;overflow:hidden;background:#050505;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+canvas{width:100%;height:100%;display:block}
+.panel{width:310px;flex:none;padding:20px;border:1px solid #30343e;border-radius:12px;background:#111319}
+.panel h1{font-size:18px;margin:0 0 5px}
+.panel .sub{font-size:12px;color:#8f96a3;margin:0 0 18px}
+.buttons{display:flex;gap:8px;flex-wrap:wrap}
+button{padding:9px 14px;background:#282b31;color:#fff;border:1px solid #555b66;border-radius:8px;cursor:pointer}
+label{display:block;margin:16px 0}
+label span{float:right;font-family:monospace}
+input[type=range]{width:100%}
+input[type=number]{width:100%;margin-top:7px;background:#0c0e12;color:#eee;border:1px solid #3a3f49;border-radius:6px;padding:7px}
+.note{font-size:13px;line-height:1.5;color:#9299a5;margin-bottom:0}
+.back{display:inline-block;margin-top:15px;color:#c8cdd6;text-decoration:none;border-bottom:1px solid #555c68}
+@media (orientation:portrait), (max-width:760px){
+  html,body{background:#050505;overflow:hidden}
+  .app{display:block;padding:0;min-height:0;width:100vw;height:100vh}
+  .panel{display:none}
+  .frame{width:100vw;height:100vh;aspect-ratio:auto;border:0;border-radius:0;box-shadow:none}
+}
+</style></head>
+<body><div class="app">
+<section class="frame"><canvas id="c" width="1080" height="1920"></canvas></section>
+<section class="panel">
+<h1>Collision Trails</h1>
+<p class="sub">Glass Sphere Edition · EO1 1080 × 1920</p>
+<div class="buttons"><button id="pause">Pause</button><button id="restart">Restart</button><button id="random">Randomize</button></div>
 <label>Balls <span id="bv">8</span><input id="balls" type="range" min="1" max="30" value="8"></label>
 <label>Speed <span id="sv">1.0</span><input id="speed" type="range" min="20" max="300" value="100"></label>
 <label>Ball size <span id="zv">12</span><input id="size" type="range" min="3" max="35" value="12"></label>
@@ -9,20 +38,21 @@
 <label><input id="collisions" type="checkbox" checked> Ball-to-ball elastic collisions</label>
 <label><input id="sphere" type="checkbox" checked> 3D sphere rendering</label>
 <label>Seed <input id="seed" type="number" value="48372" min="1" max="999999999"></label>
-<p class="note">EO1 9:16 generative motion study · elastic ball collisions · collision flashes · persistent trails</p></section>
-<section class="frame"><canvas id="c" width="540" height="960"></canvas></section></div>
+<p class="note">EO1 9:16 generative motion study · elastic ball collisions · collision flashes · persistent trails</p>
+<a class="back" href="index.html">← Generative Art</a>
+</section></div>
 <script>
 const c=document.getElementById('c'),x=c.getContext('2d'),E=id=>document.getElementById(id);
 let B=[],F=[],run=true,raf,last=0;
 function R(s){return()=>((s=(s*1664525+1013904223)>>>0)/4294967296)}
 function flash(px,py,h,p){let q=+E('flash').value/100*p;if(q)F.push({x:px,y:py,h,life:1,q})}
-function init(){let r=R(Math.max(1,+E('seed').value||1)),n=+E('balls').value,d=+E('size').value;B=[];F=[];
- for(let i=0;i<n;i++){let px,py,k=0;do{px=d+r()*(c.width-2*d);py=d+r()*(c.height-2*d)}while(++k<100&&B.some(b=>Math.hypot(b.x-px,b.y-py)<2.2*d));let a=r()*Math.PI*2;B.push({x:px,y:py,vx:Math.cos(a)*(.55+r()*1.15),vy:Math.sin(a)*(.55+r()*1.15),h:r()*360})}
+function init(){let r=R(Math.max(1,+E('seed').value||1)),n=+E('balls').value,d=2*(+E('size').value);B=[];F=[];
+ for(let i=0;i<n;i++){let px,py,k=0;do{px=d+r()*(c.width-2*d);py=d+r()*(c.height-2*d)}while(++k<100&&B.some(b=>Math.hypot(b.x-px,b.y-py)<2.2*d));let a=r()*Math.PI*2;B.push({x:px,y:py,vx:Math.cos(a)*(1.10+r()*2.30),vy:Math.sin(a)*(1.10+r()*2.30),h:r()*360})}
  x.fillStyle='#050505';x.fillRect(0,0,c.width,c.height);last=0}
 function hit(a,b,d){let dx=b.x-a.x,dy=b.y-a.y,q=dx*dx+dy*dy,m=2*d;if(q<=0||q>=m*m)return;let z=Math.sqrt(q),nx=dx/z,ny=dy/z,o=m-z;a.x-=nx*o/2;a.y-=ny*o/2;b.x+=nx*o/2;b.y+=ny*o/2;let rel=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;if(rel>=0)return;a.vx+=rel*nx;a.vy+=rel*ny;b.vx-=rel*nx;b.vy-=rel*ny;flash((a.x+b.x)/2,(a.y+b.y)/2,(a.h+b.h)/2,1.15);a.h=(a.h+17)%360;b.h=(b.h+31)%360}
 function wall(b,d){let h=0;if(b.x<=d){b.x=d;b.vx=Math.abs(b.vx);h=1}if(b.x>=c.width-d){b.x=c.width-d;b.vx=-Math.abs(b.vx);h=1}if(b.y<=d){b.y=d;b.vy=Math.abs(b.vy);h=1}if(b.y>=c.height-d){b.y=c.height-d;b.vy=-Math.abs(b.vy);h=1}if(h){flash(b.x,b.y,b.h,.48);b.h=(b.h+37)%360}}
-function drawF(dt){for(let i=F.length-1;i>=0;i--){let f=F[i];f.life-=.075*dt;if(f.life<=0){F.splice(i,1);continue}let rr=(1-f.life)*58*f.q+8,g=x.createRadialGradient(f.x,f.y,0,f.x,f.y,rr);g.addColorStop(0,`rgba(255,255,255,${Math.min(.95,f.life*f.q)})`);g.addColorStop(.22,`hsla(${f.h},90%,75%,${f.life*.7})`);g.addColorStop(1,`hsla(${f.h},90%,60%,0)`);x.fillStyle=g;x.beginPath();x.arc(f.x,f.y,rr,0,7);x.fill()}}
-function frame(t){if(!run)return;let dt=Math.min(2,(t-last)/16.667||1);last=t;let p=+E('trail').value/100;if(p<1){x.fillStyle=`rgba(5,5,5,${Math.max(.004,1-p)})`;x.fillRect(0,0,c.width,c.height)}let s=+E('speed').value/100,d=+E('size').value,O=B.map(b=>({x:b.x,y:b.y}));B.forEach(b=>{b.x+=b.vx*s*dt*3;b.y+=b.vy*s*dt*3;wall(b,d)});if(E('collisions').checked)for(let i=0;i<B.length;i++)for(let j=i+1;j<B.length;j++)hit(B[i],B[j],d);B.forEach((b,i)=>{x.beginPath();x.moveTo(O[i].x,O[i].y);x.lineTo(b.x,b.y);x.strokeStyle=`hsla(${b.h},70%,68%,.55)`;x.lineWidth=Math.max(1,d*.38);x.stroke();if(E('sphere').checked){
+function drawF(dt){for(let i=F.length-1;i>=0;i--){let f=F[i];f.life-=.075*dt;if(f.life<=0){F.splice(i,1);continue}let rr=(1-f.life)*116*f.q+16,g=x.createRadialGradient(f.x,f.y,0,f.x,f.y,rr);g.addColorStop(0,`rgba(255,255,255,${Math.min(.95,f.life*f.q)})`);g.addColorStop(.22,`hsla(${f.h},90%,75%,${f.life*.7})`);g.addColorStop(1,`hsla(${f.h},90%,60%,0)`);x.fillStyle=g;x.beginPath();x.arc(f.x,f.y,rr,0,7);x.fill()}}
+function frame(t){if(!run)return;let dt=Math.min(2,(t-last)/16.667||1);last=t;let p=+E('trail').value/100;if(p<1){x.fillStyle=`rgba(5,5,5,${Math.max(.004,1-p)})`;x.fillRect(0,0,c.width,c.height)}let s=+E('speed').value/100,d=2*(+E('size').value),O=B.map(b=>({x:b.x,y:b.y}));B.forEach(b=>{b.x+=b.vx*s*dt*3;b.y+=b.vy*s*dt*3;wall(b,d)});if(E('collisions').checked)for(let i=0;i<B.length;i++)for(let j=i+1;j<B.length;j++)hit(B[i],B[j],d);B.forEach((b,i)=>{x.beginPath();x.moveTo(O[i].x,O[i].y);x.lineTo(b.x,b.y);x.strokeStyle=`hsla(${b.h},70%,68%,.55)`;x.lineWidth=Math.max(1,d*.38);x.stroke();if(E('sphere').checked){
  x.save();x.beginPath();x.arc(b.x,b.y,d,0,Math.PI*2);x.clip();
  let g=x.createRadialGradient(b.x-d*.42,b.y-d*.46,d*.04,b.x+d*.14,b.y+d*.16,d*1.22);
  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.12,`hsla(${b.h},96%,88%,1)`);
