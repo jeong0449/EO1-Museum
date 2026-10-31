@@ -663,8 +663,6 @@ EO1에서는 복잡한 Canvas redraw보다 이미 만들어진 layer를 `transfo
 
 ---
 
-------------------------------------------------------------------------
-
 ## HTML5/JavaScript artwork를 1080 × 1920 video로 기록하기
 
 EO1에서 HTML5/JavaScript 기반의 generative artwork를 직접 실행하는 실험은
