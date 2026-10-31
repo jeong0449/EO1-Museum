@@ -5,7 +5,7 @@ GET_COMMONS_ART.py
 Wikimedia Commons Public Domain artwork discovery/downloader
 for EO1-Museum
 
-Version: 0.4
+Version: 0.5
 Date: 2026-10-29
 
 Purpose
@@ -82,9 +82,16 @@ Discovery strategy
 ------------------
 
     Category:Paintings by <artist> by title
-
         -> individual artwork categories
         -> image files
+
+    Fallback:
+    Category:Paintings by <artist> by year
+        -> year categories -> image files
+
+    Final fallback:
+    Category:Paintings by <artist>
+        -> category tree -> image files
         -> Public Domain / CC0
         -> resolution filter
         -> largest eligible image per artwork
@@ -113,8 +120,8 @@ from urllib3.util.retry import Retry
 # Configuration
 # ============================================================
 
-VERSION = "0.4"
-BUILD_DATE = "2026-10-29"
+VERSION = "0.5"
+BUILD_DATE = "2026-10-31"
 
 API = "https://commons.wikimedia.org/w/api.php"
 
@@ -688,66 +695,114 @@ def category_exists(category):
 # Find artwork categories
 # ============================================================
 
-def find_title_category(artist):
+def find_discovery_category(artist):
+    """Find the best Commons category structure available for an artist.
 
-    category = (
-        f"Category:Paintings by "
-        f"{artist} by title"
-    )
+    Preferred strategy:
+      1. Paintings by <artist> by title  (one category per artwork)
+      2. Paintings by <artist> by year   (files grouped by year)
+      3. Paintings by <artist>           (generic fallback)
+    """
+
+    candidates = [
+        (f"Category:Paintings by {artist} by title", "title"),
+        (f"Category:Paintings by {artist} by year", "flat"),
+        (f"Category:Paintings by {artist}", "flat"),
+    ]
 
     print()
 
-    print(
-        f"Looking for: "
-        f"{category}"
-    )
+    for category, strategy in candidates:
+        print(f"Looking for: {category}")
+        if category_exists(category):
+            print(f"Found. Discovery mode: {strategy}")
+            return category, strategy
+        print("Not found.")
 
-    if category_exists(
-        category
-    ):
-
-        print("Found.")
-
-        return category
-
-    print("Not found.")
-
-    return None
+    return None, None
 
 
-def collect_artwork_categories(
-    artist
-):
+def collect_artwork_categories(artist):
+    category, strategy = find_discovery_category(artist)
 
-    title_category = (
-        find_title_category(
-            artist
-        )
-    )
+    if not category:
+        return None, None
 
-    if not title_category:
+    if strategy == "title":
+        print()
+        print("Reading artwork categories...")
+        artworks = category_members(category, "subcat")
+        print(f"Artwork categories found: {len(artworks)}")
+        return strategy, artworks
+
+    print()
+    print(f"Using category tree: {category}")
+    return strategy, category
+
+
+def collect_files_recursive(category, max_depth=2):
+    """Collect unique files from a Commons category tree.
+
+    This fallback is intended for artists whose Commons structure is grouped
+    by year or museum rather than by individual artwork title.
+    """
+
+    files = {}
+    visited = set()
+
+    def walk(cat, depth):
+        if cat in visited or depth > max_depth:
+            return
+        visited.add(cat)
+
+        for item in category_members(cat, "file"):
+            files[item["pageid"]] = item["title"]
+
+        if depth == max_depth:
+            return
+
+        for subcat in category_members(cat, "subcat"):
+            walk(subcat["title"], depth + 1)
+
+    walk(category, 0)
+    return files
+
+
+def artwork_name_from_file_title(title):
+    name = str(title or "").replace("File:", "", 1)
+    name = re.sub(r"\.(?:jpe?g|png|webp|tiff?)$", "", name, flags=re.I)
+    return name.strip() or "Untitled"
+
+
+def scan_flat_category_tree(category, min_short_side, min_long_side):
+    print()
+    print("Scanning category tree for artwork files...")
+
+    files = collect_files_recursive(category, max_depth=2)
+    print(f"Unique image files found: {len(files)}")
+
+    if not files:
         return []
 
-    print()
+    metadata = get_image_metadata(files.keys())
+    selected = []
 
-    print(
-        "Reading artwork "
-        "categories..."
-    )
+    for item in metadata:
+        if not is_raster_image(item):
+            continue
+        if not is_pd_or_cc0(item):
+            continue
+        if not resolution_ok(item, min_short_side, min_long_side):
+            continue
 
-    artworks = (
-        category_members(
-            title_category,
-            "subcat"
-        )
-    )
+        item = dict(item)
+        item["artwork_category"] = category
+        item["artwork_name"] = artwork_name_from_file_title(item.get("title"))
+        item["files_in_category"] = 1
+        selected.append(item)
 
-    print(
-        f"Artwork categories found: "
-        f"{len(artworks)}"
-    )
-
-    return artworks
+    print(f"Eligible artwork files: {len(selected)}")
+    return selected
 
 
 # ============================================================
@@ -1729,47 +1784,41 @@ Notes:
             "Scanning Wikimedia Commons..."
         )
 
-        artwork_categories = (
+        discovery_mode, discovery_source = (
             collect_artwork_categories(
                 args.artist
             )
         )
 
-        if not artwork_categories:
+        if not discovery_source:
 
             print()
-
-            print(
-                "No 'Paintings by ... by title' "
-                "category found."
-            )
-
-            print(
-                "This artist may use a different "
-                "Commons category structure."
-            )
-
+            print("No usable Commons painting category found.")
+            print("Tried: by title, by year, and the artist painting category.")
             return
 
-        eligible = scan_artworks(
-            artwork_categories,
-            args.min_short_side,
-            args.min_long_side
-        )
+        if discovery_mode == "title":
+            eligible = scan_artworks(
+                discovery_source,
+                args.min_short_side,
+                args.min_long_side
+            )
+            source_count = len(discovery_source)
+            source_label = "Artwork categories"
+        else:
+            eligible = scan_flat_category_tree(
+                discovery_source,
+                args.min_short_side,
+                args.min_long_side
+            )
+            source_count = len(eligible)
+            source_label = "Eligible files"
 
         print()
-
         print("=" * 60)
-
-        print(
-            f"Artwork categories : "
-            f"{len(artwork_categories)}"
-        )
-
-        print(
-            f"Eligible artworks   : "
-            f"{len(eligible)}"
-        )
+        print(f"Discovery mode     : {discovery_mode}")
+        print(f"{source_label:<19}: {source_count}")
+        print(f"Eligible artworks   : {len(eligible)}")
 
         print("=" * 60)
 
