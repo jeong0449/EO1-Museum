@@ -1,16 +1,17 @@
 # Downloaded original artwork
-original/*
+original*
 !original/.gitkeep
 
 # Generated display images
-display/*
-!display/.gitkeep
+display/
 
 # The Met Open Access dataset
 MetObjects.csv
 
 # Current exhibition metadata
 met_metadata.json
+
+metadata/*_downloaded.json
 
 # Local development archive
 archive/
