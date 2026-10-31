@@ -125,6 +125,7 @@ The associated Windows batch files—`START_EO1.bat`, `UPDATE_MET.bat`, and `GET
 These files and instructions are retained for **historical reference and reproducibility**, rather than as the recommended setup for the current EO1-Museum application.
 
 For the full history of this architecture and its transition to the native application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
+
 ## Museum Collections
 
 EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions may expand beyond conventional museum collections to include **space imagery provided by NASA** and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture and scientific imagery.
@@ -142,13 +143,6 @@ The Met
 Wikimedia Commons
    └── broad, cross-collection discovery
 ```
-
-### Generative Art
-
-EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render these animations smoothly in real time, the works are rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
-
-The artworks, interactive browser versions, and a brief description of the rendering workflow are available in the [▶ Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/).
-
 Discovered artworks are downloaded to the PC, curated locally, and processed for the EO1's 1080 × 1920 portrait display. The resulting gallery can be viewed directly through PC Gallery or transferred to the EO1's internal storage using Safe Sync for independent Local Gallery playback.
 
 Detailed search syntax, command-line options, examples, caching behavior, and curation workflows are documented separately in [Search Examples](SEARCH_EXAMPLES.md).
@@ -156,6 +150,12 @@ Detailed search syntax, command-line options, examples, caching behavior, and cu
 The discovery system is intentionally extensible, so additional open-access collections can be added when suitable image and metadata sources are available.
 
 In this sense, EO1-Museum can also be seen as a small experiment in what might be called **“Fine Art Informatics”** — using open cultural data, metadata, computation, human curation, and digital displays to discover, organize, and experience works of art.
+
+### Generative Art
+
+EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render these animations smoothly in real time, the works are rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
+
+The artworks, interactive browser versions, and a brief description of the rendering workflow are available in the [Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/).
 
 ## Inspiration and Prior Work
 
