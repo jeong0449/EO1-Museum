@@ -27,6 +27,15 @@ header p{margin:0;color:var(--muted);font-size:16px;line-height:1.6}
 .play-overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.08);cursor:pointer}
 .play-overlay span{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);color:#f0f2f6;font-size:12px;letter-spacing:.02em;border:1px solid rgba(255,255,255,.16)}
 .play-overlay:hover span{background:rgba(0,0,0,.78);border-color:rgba(255,255,255,.34)}
+.guide{max-width:1180px;margin:0 auto 56px;padding:0 28px}
+.guide-inner{border-top:1px solid var(--line);padding-top:36px;max-width:900px}
+.guide h2{font-size:26px;margin:0 0 16px}
+.guide h3{font-size:17px;margin:28px 0 10px}
+.guide p,.guide li{color:#b9bec8;font-size:14px;line-height:1.75}
+.guide a{color:#eceef2}
+.guide code{background:#151820;border:1px solid #292e39;border-radius:5px;padding:2px 5px;color:#e4e7ed}
+.guide pre{overflow:auto;background:#0d0f14;border:1px solid var(--line);border-radius:9px;padding:15px 17px;color:#e4e7ed;line-height:1.55}
+.guide ul{padding-left:22px}
 footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:12px}
 @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){header{padding-top:32px}.grid{grid-template-columns:1fr 1fr;gap:14px;padding-left:16px;padding-right:16px}header{padding-left:16px;padding-right:16px}.meta span{display:none}}
@@ -123,6 +132,75 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
     </div>
   </div>
 </main>
+
+
+<section class="guide">
+  <div class="guide-inner">
+    <h2>Rendering HTML generative art to MP4</h2>
+    <p>
+      The EO1 can display static images directly, but its original Android 4.4.2
+      hardware is not fast enough to render these HTML5 Canvas animations smoothly
+      in real time. EO1-Museum therefore uses a PC as the rendering environment:
+      the generative artwork runs in Chromium at the EO1's native portrait resolution
+      of 1080 × 1920, is captured as video, and is converted to an H.264 MP4 for
+      playback on the EO1.
+    </p>
+    <p>
+      The source HTML artworks and the rendering script are kept in the
+      <a href="https://github.com/jeong0449/EO1-Museum/tree/main/art"><code>art/</code> directory of the EO1-Museum repository</a>.
+      The renderer itself is
+      <a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/render_art.py"><code>art/render_art.py</code></a>.
+    </p>
+
+    <h3>Basic workflow</h3>
+    <pre>HTML / JavaScript artwork
+        ↓
+Chromium (1080 × 1920)
+        ↓
+render_art.py
+        ↓
+temporary WebM capture
+        ↓
+FFmpeg
+        ↓
+H.264 / yuv420p MP4
+        ↓
+EO1-Museum /art playback</pre>
+
+    <h3>Basic usage</h3>
+    <p>
+      Run the renderer from the <code>art/</code> directory, giving it an HTML artwork
+      and an output MP4 file. For example, the source for Collision Trails is
+      <a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Collision_Trails_Glass_Spheres.html"><code>EO1_Collision_Trails_Glass_Spheres.html</code></a>.
+    </p>
+    <pre>python render_art.py EO1_Collision_Trails_Glass_Spheres.html -o EO1_Collision_Trails_Glass_Spheres.mp4 -d 300</pre>
+    <p>
+      Here <code>-d 300</code> renders five minutes of animation. The resulting MP4
+      is intended for transfer to the EO1's <code>/sdcard/EO1-Museum/art/</code>
+      directory, where the native EO1-Museum app can play the rendered works in
+      randomized sequence.
+    </p>
+
+    <h3>Rendering with artwork controls</h3>
+    <p>
+      For artworks that expose interactive controls, <code>--preview</code> opens the
+      artwork in preview mode and <code>--set ID=VALUE</code> sets control values before
+      recording. Multiple <code>--set</code> options may be supplied.
+    </p>
+    <pre>python render_art.py EO1_Collision_Trails_Glass_Spheres.html -o EO1_Collision_Trails_Glass_Spheres.mp4 -d 300 --preview --set balls=12 --set speed=80 --set size=16 --set trail=97</pre>
+
+    <h3>Examples in this gallery</h3>
+    <p>All of the HTML sources shown above are available directly in the repository:</p>
+    <ul>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Collision_Trails_Glass_Spheres.html">Collision Trails — Glass Spheres</a></li>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Cosmic_Flow_Field.html">Cosmic Flow Field</a></li>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Infinite_Spiral_Zoom.html">Infinite Spiral Zoom</a></li>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Space_Jellyfish.html">Space Jellyfish</a></li>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Neon_Wireframe_Dreamscape_Animated.html">Neon Wireframe Dreamscape</a></li>
+      <li><a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/EO1_Newtons_Cradle.html">Newton's Cradle — Conservation of Motion</a></li>
+    </ul>
+  </div>
+</section>
 
 <footer>EO1-Museum · 1080 × 1920 portrait artworks</footer>
 

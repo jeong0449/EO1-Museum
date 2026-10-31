@@ -663,318 +663,44 @@ EO1에서는 복잡한 Canvas redraw보다 이미 만들어진 layer를 `transfo
 
 ---
 
-## HTML5/JavaScript artwork를 1080 × 1920 video로 기록하기
+## HTML5/JavaScript generative artwork를 MP4로 렌더링하기
 
-EO1에서 HTML5/JavaScript 기반의 generative artwork를 직접 실행하는 실험은
-graphics stack의 특성을 이해하는 데 유용했지만, 복잡한 animation에서는 실제
-전시용으로 충분한 frame rate를 얻기 어려웠다. 특히 Canvas 2D의 지속적인
-full-screen redraw는 약 4 fps 수준이었고, CSS transform을 이용한 animation도
-복잡도가 높아지면 움직임이 매끄럽지 않을 수 있다.
+EO1에서 HTML5/JavaScript 기반 generative artwork를 직접 실행하는 실험은
+graphics stack의 특성을 이해하는 데 유용했다. 그러나 복잡한 Canvas animation은
+EO1의 KitKat WebView에서 충분한 frame rate를 얻기 어렵다.
 
-따라서 보다 복잡한 generative artwork에 대해서는 다음과 같은 별도의 전달
-경로를 고려한다.
+이 문제를 해결하기 위해 EO1-Museum에서는 HTML/JavaScript를 반드시 EO1에서 직접
+실행하는 배포 포맷으로 보지 않고, **PC에서 작품을 제작하고 렌더링하기 위한
+authoring format**으로 사용할 수 있도록 하였다.
+
+현재의 기본 경로는 다음과 같다.
 
 ```text
-HTML5 / JavaScript artwork
+HTML / JavaScript master artwork
         ↓
-PC에서 정상 속도로 실행
+render_art.py
         ↓
-1080 × 1920 video로 기록
+Headless Chromium
+1080 × 1920 / 30 fps
         ↓
-MP4
+Chrome DevTools Protocol
+real-time screen recording
         ↓
-EO1 Local Gallery
-```
-
-이 방식의 목적은 EO1에서 artwork를 실시간으로 계산하게 하는 것이 아니라,
-PC에서 생성된 최종 움직임을 EO1의 native video playback 기능으로 재생하는
-것이다.
-
-아래 방법은 HTML5/JavaScript artwork를 정확한 **1080 × 1920 portrait
-frame**으로 기록하기 위한 실용적인 workflow이다. EO1-Museum은 이미 native
-MP4 playback을 지원하므로, 남은 실제 작업은 artwork를 MP4로 기록하여 EO1에서
-재생하는 것이다.
-
-### 왜 일반적인 screen capture를 사용하지 않는가
-
-가장 단순한 방법은 Chrome이나 Firefox에서 artwork를 실행한 뒤 화면의 일부를
-녹화하는 것이다. 그러나 이 방식에는 문제가 있다.
-
-```text
-browser window
- ├── title bar
- ├── tab bar
- ├── address bar
- ├── page viewport
- └── window border
-```
-
-EO1의 실제 화면은 정확히 **1080 × 1920 portrait**이다. 일반 browser window를
-screen capture하면 browser chrome과 Windows window border를 제외한 실제
-content area를 정확히 1080 × 1920으로 맞추기가 번거롭다.
-
-마우스로 capture rectangle을 지정하는 방식 역시 1~2 pixel의 오차가 생기기
-쉽고, window를 다시 열거나 이동하면 capture 영역을 다시 맞춰야 한다.
-
-따라서 EO1용 artwork에서는 **화면의 일부를 잘라 녹화하는 방식보다 OBS
-Browser Source 자체를 1080 × 1920으로 생성하는 방식**이 더 적합하다.
-
-### 권장 방법: OBS Browser Source
-
-OBS Studio에서 artwork의 HTML page를 Browser Source로 직접 읽는다.
-
-이 방식에서는 실제 desktop browser window가 필요하지 않다. OBS 내부 browser가
-지정된 URL을 직접 열고, 그 browser viewport의 크기를 숫자로 지정할 수 있다.
-
-따라서 다음 네 단계의 크기를 모두 동일하게 맞출 수 있다.
-
-```text
-HTML artwork viewport
-        1080 × 1920
-             ↓
-OBS Browser Source
-        1080 × 1920
-             ↓
-OBS Canvas
-        1080 × 1920
-             ↓
-Recorded video
-        1080 × 1920
-```
-
-이것이 일반적인 Window Capture나 Display Capture보다 중요한 장점이다.
-화면의 어느 부분을 녹화할지 마우스로 정확하게 선택할 필요가 없다.
-
-### 1. HTML artwork의 frame을 고정한다
-
-가능하면 HTML document 자체를 처음부터 EO1의 native resolution에 맞춘다.
-
-```css
-html, body {
-    margin: 0;
-    padding: 0;
-    width: 1080px;
-    height: 1920px;
-    overflow: hidden;
-    background: black;
-}
-```
-
-Canvas를 사용하는 artwork라면 CSS 크기뿐 아니라 실제 Canvas bitmap의 크기도
-명시한다.
-
-```html
-<canvas id="art" width="1080" height="1920"></canvas>
-```
-
-중요한 점은 다음 두 값의 차이를 피하는 것이다.
-
-```text
-CSS display size
-        vs.
-Canvas internal bitmap size
-```
-
-둘 다 1080 × 1920으로 맞추면 불필요한 scaling을 줄이고 최종 video와 EO1
-display 사이의 좌표 관계도 단순해진다.
-
-Artwork가 DOM/CSS 기반이라면 최상위 container 역시 1080 × 1920으로 고정하는
-것이 좋다.
-
-### 2. HTML artwork를 PC에서 제공한다
-
-로컬 HTML file을 직접 열 수도 있지만, EO1-Museum의 기존 개발 방식처럼
-간단한 local HTTP server를 사용하는 편이 resource loading과 상대 경로 처리에
-편리하다.
-
-예:
-
-```text
-http://localhost:8000/art/example.html
-```
-
-또는 PC의 실제 local address를 사용할 수 있다.
-
-```text
-http://192.168.x.x:8000/art/example.html
-```
-
-OBS Browser Source에는 이 URL을 직접 입력한다.
-
-### 3. OBS canvas를 1080 × 1920으로 설정한다
-
-OBS에서:
-
-```text
-Settings
-    ↓
-Video
-```
-
-로 이동하여 다음과 같이 설정한다.
-
-```text
-Base (Canvas) Resolution       1080 × 1920
-Output (Scaled) Resolution     1080 × 1920
-Common FPS Values              30
-```
-
-여기서 가장 중요한 것은 **Base와 Output을 모두 1080 × 1920으로 유지하는
-것**이다.
-
-이렇게 하면 recording 과정에서 portrait artwork를 landscape canvas에 넣었다가
-다시 scaling하거나 crop할 필요가 없다.
-
-30 fps는 generative artwork를 기록하기에 적당한 기본값이다. 특정 artwork나
-EO1 playback에서 문제가 있을 때만 frame rate나 encoding 조건을 조정한다.
-
-### 4. Browser Source를 정확히 1080 × 1920으로 만든다
-
-OBS의 Sources 영역에서:
-
-```text
-+
-    ↓
-Browser
-```
-
-를 선택한다.
-
-Browser Source의 properties에서 다음 값을 지정한다.
-
-```text
-URL       http://localhost:8000/art/example.html
-Width     1080
-Height    1920
-```
-
-가능한 경우 source의 frame rate도 30 fps를 기준으로 한다.
-
-여기서 `Width`와 `Height`는 desktop browser window의 크기가 아니라 **OBS
-내부 browser viewport의 크기**이다.
-
-따라서 browser title bar나 address bar는 존재하지 않는다.
-
-### 5. Browser Source와 OBS canvas를 1:1로 맞춘다
-
-Browser Source를 선택한 뒤:
-
-```text
-Right click
-    ↓
-Transform
-    ↓
-Fit to Screen
-```
-
-을 적용한다.
-
-Source와 canvas가 모두 1080 × 1920이면 scaling 없이 정확히 일치해야 한다.
-
-더 확실하게 확인하려면:
-
-```text
-Right click
-    ↓
-Transform
-    ↓
-Edit Transform
-```
-
-에서 다음 항목을 확인한다.
-
-```text
-Position
-    X = 0
-    Y = 0
-
-Size
-    1080 × 1920
-
-Crop
-    Left   = 0
-    Right  = 0
-    Top    = 0
-    Bottom = 0
-```
-
-즉 최종적으로 다음 관계가 되어야 한다.
-
-```text
-source pixel (0,0)
-        =
-OBS canvas pixel (0,0)
-
-source pixel (1079,1919)
-        =
-OBS canvas pixel (1079,1919)
-```
-
-이 상태라면 별도의 manual crop이나 browser-window alignment가 필요하지 않다.
-
-### 6. OBS preview에서 확인할 사항
-
-녹화 전에 다음을 확인한다.
-
-```text
-[ ] artwork가 canvas 전체를 채우는가
-[ ] 좌우에 예상하지 않은 여백이 없는가
-[ ] 위아래가 잘리지 않았는가
-[ ] browser scrollbar가 나타나지 않는가
-[ ] source가 회전되거나 scaling되지 않았는가
-[ ] crop 값이 모두 0인가
-```
-
-HTML의 `margin: 0`, `padding: 0`, `overflow: hidden` 설정은 특히 중요하다.
-
-검은 배경을 의도했다면 여백과 artwork의 실제 검은 영역을 혼동하지 않도록
-원본 HTML에서도 frame 경계를 확인하는 것이 좋다.
-
-### 7. 녹화
-
-Frame이 정확히 맞는 것을 확인한 뒤 OBS recording을 시작한다.
-
-이 단계에서 중요한 것은 codec을 먼저 최적화하는 것이 아니라 **정확한
-1080 × 1920 master video를 얻는 것**이다.
-
-```text
-HTML/JS artwork
+temporary WebM
         ↓
-OBS Browser Source
+FFmpeg
+H.264 / yuv420p
         ↓
-1080 × 1920 / 30 fps recording
+5-minute MP4
         ↓
-master video
+EO1 Native Local Gallery
 ```
 
-OBS의 recording container와 encoder는 PC 환경에 따라 달라질 수 있다.
-최종 결과는 EO1-Museum에서 재생할 수 있는 MP4로 준비한다. 필요할 경우
-recording 후 FFmpeg를 이용하여 MP4로 변환하거나 encoding 조건을 조정할 수
-있다.
+이 방식에서는 EO1이 generative artwork를 실시간으로 계산하지 않는다. PC에서
+완성된 움직임을 video로 만들고, EO1은 native video playback 기능으로 이를
+재생한다.
 
-### 8. EO1에서 재생
-
-EO1-Museum native application은 이미 MP4 playback을 지원한다. 따라서 기록한
-video는 다음과 같은 기존 media workflow에 넣으면 된다.
-
-```text
-master recording
-        ↓
-필요하면 MP4로 변환
-        ↓
-Safe Sync 또는 ADB transfer
-        ↓
-/sdcard/EO1-Museum/images/
-        ↓
-Local Gallery playback
-```
-
-실제로 문제가 발생하는 경우에만 codec, bitrate, frame rate 등의 encoding
-조건을 조정하면 된다. 별도의 복잡한 검증 절차를 먼저 만들 필요는 없다.
-
-### 9. 왜 이 방식이 EO1-Museum에 적합한가
-
-이 방식은 EO1-Museum의 전체 설계 원칙과도 잘 맞는다.
+이것은 EO1-Museum의 기존 원칙과도 잘 맞는다.
 
 ```text
 PC
@@ -990,68 +716,304 @@ EO1
     -> display
 ```
 
-즉 복잡한 작업은 PC가 담당하고, EO1은 이미 완성된 media를 안정적으로
-표시하는 데 집중한다.
+복잡한 작업은 PC가 담당하고 EO1은 이미 준비된 media를 안정적으로 표시하는 데
+집중한다.
 
-정지 artwork에서는 이미 같은 원칙을 사용한다.
+### OBS를 사용하지 않는 이유
 
-```text
-large original image
-        ↓
-PC make_gallery.py
-        ↓
-1080 × 1920 prepared image
-        ↓
-EO1 Local Gallery
-```
+초기에는 OBS Browser Source를 이용하여 1080 × 1920 portrait video를 만드는
+방법을 검토하였다. 일반적인 Window Capture보다 Browser Source가 정확한 viewport를
+만들기에는 유리했지만, 별도의 OBS 설정과 capture workflow가 필요하였다.
 
-Generative artwork에서도 같은 생각을 적용하면:
+이후 headless Chromium 자체에서 화면을 직접 기록할 수 있음을 확인하였다.
+따라서 현재 workflow에서는 physical monitor, desktop browser window, OBS,
+capture rectangle, manual crop이 모두 필요하지 않다.
 
 ```text
-HTML5 / JavaScript generative artwork
-        ↓
-PC rendering / recording
-        ↓
-1080 × 1920 prepared video
-        ↓
-EO1 Local Gallery
-```
+이전 검토 방식
 
-가 된다.
-
-따라서 HTML5/JavaScript는 반드시 EO1에서 직접 실행해야 하는 **배포 포맷**일
-필요가 없다. PC에서 artwork를 생성하는 **authoring/rendering environment**로
-사용하고, EO1에는 최종 결과인 video만 전달하는 것도 충분히 자연스럽다.
-
-### 10. 현재 workflow
-
-현재 권장 방향은 다음과 같이 정리된다.
-
-```text
-HTML5/JavaScript artwork
-        ↓
-PC에서 실행
-        ↓
+HTML
+  ↓
 OBS Browser Source
+  ↓
+OBS Canvas
+  ↓
+recording
+
+
+현재 방식
+
+HTML
+  ↓
+Headless Chromium
+  ↓
+CDP direct recording
+  ↓
+FFmpeg
+  ↓
+MP4
+```
+
+### render_art.py
+
+이 workflow를 자동화하기 위해 `render_art.py`를 사용한다.
+
+현재 버전은:
+
+```text
+render_art.py 1.1.0
+```
+
+기본 사용법:
+
+```powershell
+python render_art.py artwork.html -o artwork.mp4 -d 300
+```
+
+`-d 300`은 300초, 즉 **5분짜리 작품**을 만든다는 뜻이다.
+
+렌더러는 headless Chromium의 viewport를 EO1의 native resolution과 같은
+1080 × 1920으로 만들고 artwork를 실제 시간으로 실행한다. 녹화 결과는 임시
+WebM으로 받은 뒤 FFmpeg로 MP4로 변환한다.
+
+현재 기본 video 조건은 다음과 같다.
+
+```text
+Resolution     1080 × 1920
+Frame rate     30 fps
+Video codec    H.264
+Pixel format   yuv420p
+Audio          none
+Container      MP4
+```
+
+FFmpeg 변환은 다음 계열의 설정을 사용한다.
+
+```text
+libx264
+preset veryfast
+CRF 18
+yuv420p
+faststart
+```
+
+임시 WebM은 MP4 변환이 끝나면 삭제한다.
+
+### real-time recording
+
+초기 renderer 실험에서는 각 frame을 screenshot으로 얻거나 virtual time으로
+animation 시간을 제어하는 방법을 시험하였다. 정확한 animation 속도는 얻을 수
+있었지만 처리 시간이 길었다.
+
+현재 방식에서는 Chromium에서 artwork를 **실제 시간으로 실행하면서 직접
+recording**한다. 따라서 JavaScript의 `requestAnimationFrame()`이나 timer를
+인위적으로 다시 구현할 필요가 없다.
+
+실험에서 60초 artwork의 전체 처리 시간은 약 76초였으며, 대략 1.27배의 wall
+time으로 최종 MP4를 만들 수 있었다. 이 정도라면 5분짜리 artwork를 일상적으로
+제작하는 데 충분히 실용적이다.
+
+### preview mode
+
+일부 artwork는 PC에서 parameter를 조절하기 위한 control panel을 가지고 있다.
+예를 들어 Collision Trails에는 공의 수, 속도, 크기, trail persistence 등의
+control이 있다.
+
+작품 제작용 HTML에서는 이러한 control을 그대로 유지하는 것이 편리하지만,
+EO1용 video에는 control panel이 나타나면 안 된다.
+
+이를 위해 artwork가 `?preview=1`을 지원하는 경우 다음과 같이 실행한다.
+
+```powershell
+python render_art.py collision.html -o collision.mp4 -d 300 --preview
+```
+
+`--preview`는 HTML을 다음과 같은 형태로 연다.
+
+```text
+file:///.../collision.html?preview=1
+```
+
+따라서 master HTML을 별도로 복제하거나 control panel을 삭제할 필요가 없다.
+
+### --set을 이용한 artwork parameter 지정
+
+`render_art.py` v1.1.0에서는 렌더링 시작 전에 HTML form control의 값을 지정할
+수 있다.
+
+예:
+
+```powershell
+python render_art.py collision.html -o collision.mp4 -d 300 --preview \
+    --set balls=12 speed=80 size=16 trail=97
+```
+
+`--set`은 HTML element의 `id`를 사용한다.
+
+```text
+--set id=value
+```
+
+렌더러는 Chromium에서 해당 element를 찾아 값을 바꾼 뒤 `input`과 `change`
+event를 발생시킨다. 따라서 slider, number input, checkbox 등으로 만든 기존
+interactive control을 artwork의 parameter interface로 그대로 활용할 수 있다.
+
+checkbox도 다음과 같이 지정할 수 있다.
+
+```text
+--set collisions=true sphere=false
+```
+
+이 구조의 장점은 renderer가 특정 artwork에 종속되지 않는다는 것이다.
+
+```text
+interactive HTML master
+        ↓
+control parameter 선택
+        ↓
+render_art.py --set ...
+        ↓
+특정 parameter를 가진 MP4
+```
+
+같은 HTML master에서 parameter만 바꾸어 여러 variation을 만들 수 있다.
+
+### Collision Trails 예
+
+Collision Trails의 기본 공 크기를 약 30% 크게 하여 5분짜리 작품을 만들려면:
+
+```powershell
+python render_art.py "EO1_Collision_Trails_Glass_Spheres.html" \
+    -o "EO1_Collision_Trails_Glass_Spheres.mp4" \
+    -d 300 --preview --set size=16
+```
+
+이처럼 interactive control은 작품을 설계하고 시험하는 interface이고,
+`render_art.py`는 선택된 상태를 최종 video로 고정하는 rendering 도구가 된다.
+
+### 여러 artwork의 batch rendering
+
+각 artwork를 5분짜리 MP4로 만들 때에는 명령을 순서대로 실행하거나 PowerShell
+script로 묶을 수 있다.
+
+```powershell
+python render_art.py "EO1_Collision_Trails_Glass_Spheres.html" -o "EO1_Collision_Trails_Glass_Spheres.mp4" -d 300 --preview --set size=16
+python render_art.py "EO1_Cosmic_Flow_Field.html" -o "EO1_Cosmic_Flow_Field.mp4" -d 300
+python render_art.py "EO1_Infinite_Spiral_Zoom.html" -o "EO1_Infinite_Spiral_Zoom.mp4" -d 300
+python render_art.py "EO1_Newtons_Cradle.html" -o "EO1_Newtons_Cradle.mp4" -d 300
+python render_art.py "EO1_Neon_Wireframe_Dreamscape_Animated.html" -o "EO1_Neon_Wireframe_Dreamscape_Animated.mp4" -d 300
+python render_art.py "EO1_Space_Jellyfish.html" -o "EO1_Space_Jellyfish.mp4" -d 300
+```
+
+따라서 generative artwork의 추가는 특별한 recording setup을 다시 만드는 작업이
+아니다. HTML master를 준비한 뒤 같은 renderer를 반복해서 사용하면 된다.
+
+### EO1용 video file size
+
+5분짜리 generative artwork가 약 59 MB인 사례를 기준으로 하면 평균 data rate는
+약 1.6 Mbps 수준이다. 현재의 H.264/yuv420p 조건에서는 화질을 더 낮추어 file
+size를 억지로 줄이기보다 실제 EO1 playback과 저장공간을 기준으로 판단하는 편이
+낫다.
+
+EO1-Museum에서는 여러 artwork를 장기간 보관할 때 내부 저장공간의 여유를
+확인해야 하지만, 개별 5분 video가 수십 MB인 것은 현재 workflow에서 특별히
+비정상적인 크기로 보지 않는다.
+
+### EO1에서의 전달과 재생
+
+완성된 MP4는 기존 EO1-Museum media workflow를 그대로 사용한다.
+
+```text
+render_art.py
+        ↓
+EO1-ready MP4
+        ↓
+Safe Sync 또는 ADB transfer
+        ↓
+/sdcard/EO1-Museum/images/
+        ↓
+Native Local Gallery
+        ↓
+video playback
+```
+
+따라서 generative artwork를 위해 EO1 쪽에 별도의 HTML runtime이나 새로운
+player를 추가할 필요가 없다.
+
+### 정지 작품, 가벼운 HTML animation, generative video의 공존
+
+현재 EO1-Museum의 display path는 세 종류로 정리할 수 있다.
+
+```text
+Still artwork
+    → JPEG / PNG
+    → Native Local Gallery
+    → adjustable display interval
+    → cross-fade
+
+
+Lightweight HTML animation
+    → HTML / CSS
+    → EO1 WebView
+    → transform / opacity 중심
+    → 실험 및 제한적 사용
+
+
+Complex generative artwork
+    → HTML / JavaScript master
+    → PC render_art.py
+    → H.264 / yuv420p MP4
+    → Native Local Gallery
+```
+
+따라서 HTML은 두 가지 역할을 할 수 있다.
+
+1. EO1에서 직접 실행하는 가벼운 animation format
+2. PC에서 복잡한 generative artwork를 만드는 authoring/rendering format
+
+두 번째 역할에서는 EO1의 오래된 WebView 성능이 작품의 복잡도를 제한하지 않는다.
+
+### 현재 권장 workflow
+
+현재 generative artwork에 대한 권장 workflow는 다음과 같다.
+
+```text
+HTML / JavaScript artwork
+        ↓
+PC에서 interactive하게 개발
+        ↓
+필요하면 control panel로 parameter 조정
+        ↓
+render_art.py 1.1.0
+        ↓
+--preview
+--set id=value
+        ↓
+Headless Chromium
 1080 × 1920 / 30 fps
         ↓
-MP4
+CDP real-time recording
         ↓
-Safe Sync 또는 ADB
+temporary WebM
         ↓
-EO1 Local Gallery
+FFmpeg
+H.264 / yuv420p
+        ↓
+5-minute MP4
+        ↓
+Safe Sync / ADB
+        ↓
+EO1 Native Local Gallery
 ```
 
 핵심은 HTML5/JavaScript를 EO1에서 반드시 직접 실행해야 하는 배포 포맷으로
-보지 않는 것이다. PC에서는 자유롭게 generative artwork를 만들고, EO1에는
-그 결과를 안정적으로 재생할 수 있는 media로 전달한다.
+보지 않는 것이다. PC에서는 현대 browser의 기능을 이용하여 자유롭게 artwork를
+만들고, EO1에는 이미 완성된 video를 전달한다.
 
-이 workflow에서 추가적인 검증 절차를 별도로 정의할 필요는 없다. 실제 artwork를
-녹화하여 EO1에서 재생하고, 문제가 발견될 때 필요한 encoding 조건만 조정하면
-된다.
+이로써 EO1의 오래된 graphics stack은 더 이상 복잡한 generative artwork의
+직접적인 표현 한계가 아니다.
 
 ------------------------------------------------------------------------
-
 
 ## 19. README와 upstream attribution
 
@@ -1059,13 +1021,13 @@ EO1 Local Gallery
 프로젝트가 지금 수준까지 달라진 뒤에도 그것을 프로젝트의 대표 README로
 계속 유지할 필요는 없다.
 
-원본 코드를 기반으로 시작했다는 사실과 원저작자 attribution은 보존해야
-한다. 그러나 repository의 첫 화면인 `README.md`는 이제 **현재
-EO1-Museum이 무엇인지** 설명하는 편이 맞다.
+원본 코드를 기반으로 시작했다는 사실과 원저작자 attribution은 보존해야 한다.
+그러나 repository의 첫 화면인 `README.md`는 이제 **현재 EO1-Museum이 무엇인지**
+설명하는 편이 맞다.
 
 권장 구조:
 
-``` text
+```text
 README.md
     -> 현재 EO1-Museum 설명
     -> 주요 기능
@@ -1077,7 +1039,7 @@ docs/
     -> 개발 기록
     -> ...
     -> 08_PC_GALLERY_SAFE_SYNC_V0.4_2026-10-29.md
-    -> 09_DISPLAY_GRAPHICS_V0.41_2026-10-30.md
+    -> 09_DISPLAY_GRAPHICS_V0.41_2026-10-31.md
 
 docs/upstream/ 또는 legacy/
     -> 필요하면 원본 README 별도 보존
@@ -1085,7 +1047,7 @@ docs/upstream/ 또는 legacy/
 
 새 README에는 예를 들어 다음과 같이 upstream을 명시할 수 있다.
 
-``` text
+```text
 EO1-Museum was developed from earlier EO1 community work by spalt.
 The original source and attribution are preserved in this repository.
 EO1-Museum substantially extends that work with a native local gallery,
@@ -1093,35 +1055,58 @@ PC gallery integration, media playback, mouse controls, Safe Sync,
 and additional display features for the discontinued Electric Objects EO1.
 ```
 
-원본 source의 license와 copyright notice가 있다면 README 교체 여부와
-관계없이 그대로 유지해야 한다.
+원본 source의 license와 copyright notice가 있다면 README 교체 여부와 관계없이
+그대로 유지해야 한다.
 
-즉 **README를 EO1-Museum의 것으로 바꾸는 것과 spalt의 attribution을
-지우는 것은 전혀 다른 일**이다.
+즉 **README를 EO1-Museum의 것으로 바꾸는 것과 spalt의 attribution을 지우는 것은
+전혀 다른 일**이다.
 
 ------------------------------------------------------------------------
 
 ## 20. 맺음말
 
-v0.41의 변화는 v0.4의 Safe Sync보다 코드 규모는 작지만 EO1을 이해하는 데
-의미가 있다.
+v0.41에서는 처음에는 이미지 표시 시간과 EO1 자체의 graphics capability를
+탐색하였다. 이 과정에서 Canvas 2D의 지속적인 full-screen redraw가 느리고,
+현재 WebView에서는 WebGL을 사용할 수 없지만 CSS `transform`, `translate3d()`,
+`opacity`를 이용한 animation은 비교적 현실적이라는 점을 확인하였다.
 
-이미지 표시 시간을 15초, 30초, 1분, 2분으로 조절할 수 있게 하여 개발
-테스트와 실제 감상을 모두 편하게 만들었다.
+그러나 이 탐색의 더 중요한 결과는 EO1에서 모든 animation을 직접 계산할 필요가
+없다는 결론이었다.
 
-또한 EO1의 graphics stack을 조사하면서 이 오래된 기기가 어떤 종류의
-animation을 잘 처리하고 어떤 방식에는 약한지를 확인하였다.
+정지 작품은 PC에서 1080 × 1920 image로 준비한다. 복잡한 generative artwork도
+같은 원칙으로 PC에서 1080 × 1920 video로 준비할 수 있다.
 
-핵심은 단순하다.
+```text
+Still artwork
+    source image
+        ↓
+    PC preprocessing
+        ↓
+    prepared JPEG/PNG
+        ↓
+    EO1
 
-> **EO1에서는 pixel을 계속 다시 그리기보다, 이미 그려진 layer를 움직이는
-> 것이 낫다.**
 
-Canvas 2D의 지속적인 full-screen redraw는 느리지만 CSS `transform`,
-`translate3d()`와 `opacity`를 이용한 합성은 훨씬 현실적이다. WebGL은
-현재 WebView에서는 사용할 수 없지만 Vivante GC2000과 OpenGL ES 2.0
-자체는 존재한다.
+Generative artwork
+    HTML/JavaScript master
+        ↓
+    PC render_art.py
+        ↓
+    prepared MP4
+        ↓
+    EO1
+```
 
-오래된 하드웨어의 특성에 맞는 rendering path를 선택한다면 EO1-Museum은
-정지 이미지와 MP4뿐 아니라 HTML/CSS 기반의 가벼운 움직이는 디지털 작품도
-새로운 전시 형식으로 활용할 수 있다.
+`render_art.py` v1.1.0은 headless Chromium과 CDP direct recording을 이용하여
+HTML/JavaScript artwork를 실제 시간으로 실행하고, FFmpeg를 통해
+H.264/yuv420p MP4로 변환한다. `--preview`와 범용 `--set id=value` 기능을
+이용하면 interactive master artwork를 수정하거나 복제하지 않고도 전시용
+variation을 만들 수 있다.
+
+따라서 v0.41에서 얻은 최종적인 교훈은 처음의 graphics benchmark보다 넓다.
+
+> **EO1이 잘하는 일은 EO1에게 맡기고, 복잡한 rendering은 PC에서 끝낸다.**
+
+이 구조를 통해 EO1-Museum은 오래된 Android 4.4.2 hardware의 한계를 억지로
+극복하려 하기보다, 그 기기가 이미 잘 수행하는 image/video playback을 활용하면서
+현대적인 generative artwork까지 전시할 수 있게 되었다.
