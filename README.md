@@ -127,7 +127,7 @@ These files and instructions are retained for **historical reference and reprodu
 For the full history of this architecture and its transition to the native application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 ## Museum Collections
 
-EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions will expand beyond conventional museum collections to include **space imagery provided by NASA**, **generative art created and rendered directly by EO1-Museum**, and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture, scientific imagery, and computational art ([▶ Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/)).
+EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions may expand beyond conventional museum collections to include **space imagery provided by NASA** and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture and scientific imagery.
 
 **The Met** provides a well-structured institutional collection with rich metadata. EO1-Museum can search its open-access collection using artist names, keywords, subjects, periods, cultures, and other metadata, making it particularly useful for systematic and curated discovery.
 
@@ -142,6 +142,12 @@ The Met
 Wikimedia Commons
    └── broad, cross-collection discovery
 ```
+
+### Generative Art
+
+EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render these animations smoothly in real time, the works are rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
+
+The artworks, interactive browser versions, and a brief description of the rendering workflow are available in the [▶ Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/).
 
 Discovered artworks are downloaded to the PC, curated locally, and processed for the EO1's 1080 × 1920 portrait display. The resulting gallery can be viewed directly through PC Gallery or transferred to the EO1's internal storage using Safe Sync for independent Local Gallery playback.
 
