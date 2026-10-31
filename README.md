@@ -1,22 +1,12 @@
 # EO1-Museum
 
-> **Current version — EO1 Museum v0.41**
+> **Current version — EO1-Museum v0.42**
 >
-> EO1-Museum revives the discontinued **Electric Objects EO1** as a standalone digital museum display with a native Android application.
+> EO1-Museum revives the discontinued **Electric Objects EO1** as a standalone digital art display using a native Android application and PC-side tools.
 >
-> The EO1 starts directly in **Local Gallery** mode and displays artwork stored in its internal storage. Exhibitions can be discovered, curated, and prepared on a PC, previewed through **PC Gallery**, and transferred to the EO1 over Wi-Fi using **Safe Sync**.
+> It displays curated museum artworks from open-access collections as well as **generative art rendered as video**. Artwork can be discovered and prepared on a PC, previewed over the network, synchronized to the EO1, and then displayed independently from its internal storage.
 >
-> Once synchronized, the EO1 operates independently without requiring the PC or a network connection for normal playback.
->
-> The current workflow is:
->
-> `artwork discovery → gallery preparation → PC Gallery → Safe Sync → Local Gallery`
->
-> Safe Sync is controlled by the PC-side `server.py`. The EO1 verifies the server identity before syncing, respects configurable limits on media count and free storage space, and displays transfer progress on screen. Files are downloaded to temporary files before replacement so that an interrupted transfer does not destroy the existing Local Gallery.
->
-> **v0.41** also adds selectable artwork display intervals of **15 seconds, 30 seconds, 1 minute, and 2 minutes**, while retaining the native Local Gallery / PC Gallery architecture introduced in earlier versions.
->
-> The original Firefox + MetBoot browser-based architecture is no longer required for normal operation and is retained as a legacy installation method.
+> **Generative Art Gallery:** https://jeong0449.github.io/EO1-Museum/art/
 
 EO1-Museum brings an [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a digital museum display. It combines a lightweight native Android application on the EO1 with PC-side tools for discovering, curating, preparing, and synchronizing artwork from open-access museum collections.
 
