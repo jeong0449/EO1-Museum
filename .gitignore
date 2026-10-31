@@ -24,3 +24,5 @@ images.js
 **/build/
 *.iml
 local.properties
+
+*zip
