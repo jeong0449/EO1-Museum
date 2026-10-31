@@ -1,6 +1,5 @@
 # Downloaded original artwork
-original*
-!original/.gitkeep
+original*/
 
 # Generated display images
 display/
