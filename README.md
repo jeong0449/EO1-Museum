@@ -1,42 +1,40 @@
 # EO1-Museum
 
-> **Note — EO1 Museum v0.4**
+> **Current version — EO1 Museum v0.41**
 >
-> EO1 Museum has reached **v0.4**, extending the native Android gallery with
-> **Safe Sync between PC Gallery and the EO1's internal storage**.
-> Images prepared on the PC can now be **synchronized over Wi-Fi and stored locally
-> in the EO1's internal storage**, making them available to the Local Gallery
-> without using ADB or manually copying files.
+> EO1-Museum revives the discontinued **Electric Objects EO1** as a standalone digital museum display with a native Android application.
 >
-> Sync is optional and controlled by the PC-side `server.py`. The EO1 checks
-> the server identity before syncing, respects configurable limits on media
-> count and free storage space, and displays sync progress directly on screen.
-> Existing files are replaced safely using temporary downloads so that an
-> interrupted transfer does not destroy the current Local Gallery.
+> The EO1 starts directly in **Local Gallery** mode and displays artwork stored in its internal storage. Exhibitions can be discovered, curated, and prepared on a PC, previewed through **PC Gallery**, and transferred to the EO1 over Wi-Fi using **Safe Sync**.
 >
-> With v0.4, the workflow now connects artwork discovery and gallery
-> preparation on the PC with independent playback on the EO1:
+> Once synchronized, the EO1 operates independently without requiring the PC or a network connection for normal playback.
+>
+> The current workflow is:
 >
 > `artwork discovery → gallery preparation → PC Gallery → Safe Sync → Local Gallery`
 >
-> The EO1 still starts in **Local Gallery** mode and remains fully usable
-> without a PC or network connection after synchronization.
+> Safe Sync is controlled by the PC-side `server.py`. The EO1 verifies the server identity before syncing, respects configurable limits on media count and free storage space, and displays transfer progress on screen. Files are downloaded to temporary files before replacement so that an interrupted transfer does not destroy the existing Local Gallery.
+>
+> **v0.41** also adds selectable artwork display intervals of **15 seconds, 30 seconds, 1 minute, and 2 minutes**, while retaining the native Local Gallery / PC Gallery architecture introduced in earlier versions.
+>
+> The original Firefox + MetBoot browser-based architecture is no longer required for normal operation and is retained as a legacy installation method.
 
-EO1-Museum brings an [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a digital museum display, using open-access collections from The Metropolitan Museum of Art and potentially other museums.
+EO1-Museum brings an [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a digital museum display. It combines a lightweight native Android application on the EO1 with PC-side tools for discovering, curating, preparing, and synchronizing artwork from open-access museum collections.
+
+The project began with The Metropolitan Museum of Art collection and is designed to accommodate artworks from other open-access collections as well.
 
 <p align="center">
-  <img src="images/sample_2.jpg" width="350" alt="Édouard Manet, Peonies, displayed on the EO1">
+  <img src="images/sample_2.jpg" width="350" alt="Claude Monet, The Apple Tree (Le Pommier), displayed on the EO1">
 </p>
 
 <p align="center">
   <em>Claude Monet, The Apple Tree (Le Pommier), 1879. Museum Barberini, Potsdam (Hasso Plattner Collection).</em>
 </p>
 
-## Original Browser-Based Architecture
+## Architecture: From Browser-Based Revival to Native EO1-Museum
 
-EO1-Museum originally began as a **browser-based revival** of the Electric Objects EO1. Rather than replacing the original Android system or developing a new native application, the first working version used a PC to prepare and serve a web gallery, while the EO1 displayed that gallery through Firefox.
+EO1-Museum originally began as a **browser-based revival** of the Electric Objects EO1. The first working version used a PC to prepare and serve a web gallery, while the EO1 displayed that gallery through Firefox.
 
-The basic workflow was:
+The original workflow was:
 
 ```text
 Open-access museum collections
@@ -56,40 +54,77 @@ Firefox opens the local gallery
 Museum artworks are displayed on the EO1
 ```
 
-Artwork collection, selection, image processing, and web serving were handled by a PC on the same local network. **Firefox 68.11.0** served as the gallery runtime on the EO1, while **MetBoot** automatically launched Firefox after Android booted. Once configured, this provided a simple unattended art-display system without depending on the original Electric Objects service.
+Artwork collection, selection, image processing, and web serving were handled by a PC on the same local network. **Firefox 68.11.0** served as the gallery runtime on the EO1, while **MetBoot** automatically launched Firefox after Android booted. This provided the first stable, unattended EO1-Museum display without depending on the original Electric Objects service.
 
-This architecture was the foundation of EO1-Museum, but it was later superseded by the native **EO1 Museum** Android application. The native application introduced an independent Local Gallery using the EO1's internal storage, and later incorporated the PC-based web gallery itself through an embedded WebView. Beginning with v0.4, Safe Sync further connected the two modes by allowing exhibitions prepared on the PC to be transferred directly to the EO1 over Wi-Fi.
+This browser-based architecture was later superseded by the native **EO1-Museum Android application**. The native application became the EO1's HOME application and introduced an independent **Local Gallery** using internal storage. The former PC-hosted gallery was then incorporated into the native application as **PC Gallery** through an embedded WebView.
+
+Beginning with v0.4, **Safe Sync** connected these two modes by allowing exhibitions prepared on the PC to be transferred directly to the EO1 over Wi-Fi.
+
+The current architecture is therefore:
+
+```text
+                 PC
+                  │
+        discovery / curation
+                  │
+           make_gallery.py
+                  │
+              display/
+                  │
+             server.py
+                  │
+        ┌─────────┴─────────┐
+        │                   │
+   PC Gallery           Safe Sync
+   (WebView)                │
+        │                   ▼
+        │          EO1 internal storage
+        │                   │
+        └────────────► Local Gallery
+                            │
+                            ▼
+                    independent playback
+```
+
+Once an exhibition has been synchronized, **Local Gallery does not require the PC or the network for normal playback**. The PC handles artwork discovery, curation, preparation, and synchronization; the EO1 primarily serves as the display device.
 
 The complete development path—from the original browser-only experiment through Firefox and MetBoot, native Android development, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync—is documented in [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 
-The current architecture and workflow are described in the sections below.
-
 ## Installation
 
-> **⚠️ Documentation under revision**
->
-> The installation documentation is currently being revised for **EO1 Museum v0.4**. The existing [Installation Guide](legacy/INSTALL_LEGACY.md) primarily describes the earlier **Firefox + MetBoot browser-based architecture** and should therefore be regarded as a historical installation procedure rather than the current recommended setup.
->
-> The current native EO1 Museum application no longer requires Firefox or MetBoot for normal operation. A revised installation procedure covering the native application, initial ADB setup, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync is being prepared.
->
-> Until the revised guide is completed, please read the existing installation instructions with this distinction in mind.
+The current installation procedure is described in the root-level [Installation Guide](INSTALL.md).
+
+The guide provides two installation and maintenance paths:
+
+1. **Network installation and normal operation** — the intended path for ordinary use. The native EO1-Museum APK is installed without relying on Firefox or MetBoot, and exhibitions are subsequently transferred through PC Gallery and Safe Sync.
+
+2. **ADB installation and maintenance** — for users who want to install or update the APK directly over USB, transfer media with `adb push`, inspect the EO1 filesystem, troubleshoot the application, or perform development work. `ADBApprovalHelper` is documented as part of this path.
+
+> **Important:** The simplified network installation procedure was reconstructed retrospectively from the development history and the author's current working EO1. It has **not yet been tested from beginning to end on a fresh or factory-reset EO1**. See [INSTALL.md](INSTALL.md) for the full warning and installation details.
+
+Firefox and MetBoot are **not required for normal operation of the current native application**.
 
 ### Legacy Browser-Based Installation
 
-For detailed instructions on setting up the PC, preparing the EO1, installing Firefox and MetBoot, and running the original browser-based museum gallery, see the [Installation Guide](legacy/INSTALL_LEGACY.md).
+The earlier Firefox + MetBoot installation procedure is preserved separately in [Legacy Installation Guide](legacy/INSTALL_LEGACY.md).
 
-A prebuilt `MetBoot.apk` is included in the repository root for direct installation on the EO1. The complete Android Studio source code is also provided in the `MetBoot/` directory.
+In that architecture, the EO1 required a Wi-Fi connection to the PC-hosted gallery during normal operation:
 
-In this earlier configuration, the EO1 required power and a Wi-Fi connection for normal operation. When the EO1 booted, **MetBoot** automatically launched Firefox, which opened the EO1-Museum gallery served by the PC on the local network.
+```text
+Android boot
+     ↓
+MetBoot
+     ↓
+Firefox 68.11.0
+     ↓
+PC-hosted EO1-Museum gallery
+```
 
-Three Windows batch files were provided for operating this browser-based version:
+The associated Windows batch files—`START_EO1.bat`, `UPDATE_MET.bat`, and `GET_MET_AND_START.bat`—also belong to this earlier browser-based workflow.
 
-- `START_EO1.bat` — start the current exhibition and local web server.
-- `UPDATE_MET.bat` — select a new exhibition while the server is already running.
-- `GET_MET_AND_START.bat` — select a new exhibition and then start the server.
+These files and instructions are retained for **historical reference and reproducibility**, rather than as the recommended setup for the current EO1-Museum application.
 
-For the history of this architecture and its transition to the native EO1 Museum application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
-
+For the full history of this architecture and its transition to the native application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 ## Museum Collections
 
 EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions will expand beyond conventional museum collections to include **space imagery provided by NASA**, **generative art created and rendered directly by EO1-Museum**, and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture, scientific imagery, and computational art ([▶ Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/)).
