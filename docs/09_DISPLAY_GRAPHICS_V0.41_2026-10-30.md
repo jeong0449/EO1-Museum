@@ -663,6 +663,398 @@ EO1에서는 복잡한 Canvas redraw보다 이미 만들어진 layer를 `transfo
 
 ---
 
+------------------------------------------------------------------------
+
+## HTML5/JavaScript artwork를 1080 × 1920 video로 기록하기
+
+EO1에서 HTML5/JavaScript 기반의 generative artwork를 직접 실행하는 실험은
+graphics stack의 특성을 이해하는 데 유용했지만, 복잡한 animation에서는 실제
+전시용으로 충분한 frame rate를 얻기 어려웠다. 특히 Canvas 2D의 지속적인
+full-screen redraw는 약 4 fps 수준이었고, CSS transform을 이용한 animation도
+복잡도가 높아지면 움직임이 매끄럽지 않을 수 있다.
+
+따라서 보다 복잡한 generative artwork에 대해서는 다음과 같은 별도의 전달
+경로를 고려한다.
+
+```text
+HTML5 / JavaScript artwork
+        ↓
+PC에서 정상 속도로 실행
+        ↓
+1080 × 1920 video로 기록
+        ↓
+MP4
+        ↓
+EO1 Local Gallery
+```
+
+이 방식의 목적은 EO1에서 artwork를 실시간으로 계산하게 하는 것이 아니라,
+PC에서 생성된 최종 움직임을 EO1의 native video playback 기능으로 재생하는
+것이다.
+
+아래 방법은 HTML5/JavaScript artwork를 정확한 **1080 × 1920 portrait
+frame**으로 기록하기 위한 실용적인 workflow이다. EO1-Museum은 이미 native
+MP4 playback을 지원하므로, 남은 실제 작업은 artwork를 MP4로 기록하여 EO1에서
+재생하는 것이다.
+
+### 왜 일반적인 screen capture를 사용하지 않는가
+
+가장 단순한 방법은 Chrome이나 Firefox에서 artwork를 실행한 뒤 화면의 일부를
+녹화하는 것이다. 그러나 이 방식에는 문제가 있다.
+
+```text
+browser window
+ ├── title bar
+ ├── tab bar
+ ├── address bar
+ ├── page viewport
+ └── window border
+```
+
+EO1의 실제 화면은 정확히 **1080 × 1920 portrait**이다. 일반 browser window를
+screen capture하면 browser chrome과 Windows window border를 제외한 실제
+content area를 정확히 1080 × 1920으로 맞추기가 번거롭다.
+
+마우스로 capture rectangle을 지정하는 방식 역시 1~2 pixel의 오차가 생기기
+쉽고, window를 다시 열거나 이동하면 capture 영역을 다시 맞춰야 한다.
+
+따라서 EO1용 artwork에서는 **화면의 일부를 잘라 녹화하는 방식보다 OBS
+Browser Source 자체를 1080 × 1920으로 생성하는 방식**이 더 적합하다.
+
+### 권장 방법: OBS Browser Source
+
+OBS Studio에서 artwork의 HTML page를 Browser Source로 직접 읽는다.
+
+이 방식에서는 실제 desktop browser window가 필요하지 않다. OBS 내부 browser가
+지정된 URL을 직접 열고, 그 browser viewport의 크기를 숫자로 지정할 수 있다.
+
+따라서 다음 네 단계의 크기를 모두 동일하게 맞출 수 있다.
+
+```text
+HTML artwork viewport
+        1080 × 1920
+             ↓
+OBS Browser Source
+        1080 × 1920
+             ↓
+OBS Canvas
+        1080 × 1920
+             ↓
+Recorded video
+        1080 × 1920
+```
+
+이것이 일반적인 Window Capture나 Display Capture보다 중요한 장점이다.
+화면의 어느 부분을 녹화할지 마우스로 정확하게 선택할 필요가 없다.
+
+### 1. HTML artwork의 frame을 고정한다
+
+가능하면 HTML document 자체를 처음부터 EO1의 native resolution에 맞춘다.
+
+```css
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: black;
+}
+```
+
+Canvas를 사용하는 artwork라면 CSS 크기뿐 아니라 실제 Canvas bitmap의 크기도
+명시한다.
+
+```html
+<canvas id="art" width="1080" height="1920"></canvas>
+```
+
+중요한 점은 다음 두 값의 차이를 피하는 것이다.
+
+```text
+CSS display size
+        vs.
+Canvas internal bitmap size
+```
+
+둘 다 1080 × 1920으로 맞추면 불필요한 scaling을 줄이고 최종 video와 EO1
+display 사이의 좌표 관계도 단순해진다.
+
+Artwork가 DOM/CSS 기반이라면 최상위 container 역시 1080 × 1920으로 고정하는
+것이 좋다.
+
+### 2. HTML artwork를 PC에서 제공한다
+
+로컬 HTML file을 직접 열 수도 있지만, EO1-Museum의 기존 개발 방식처럼
+간단한 local HTTP server를 사용하는 편이 resource loading과 상대 경로 처리에
+편리하다.
+
+예:
+
+```text
+http://localhost:8000/art/example.html
+```
+
+또는 PC의 실제 local address를 사용할 수 있다.
+
+```text
+http://192.168.x.x:8000/art/example.html
+```
+
+OBS Browser Source에는 이 URL을 직접 입력한다.
+
+### 3. OBS canvas를 1080 × 1920으로 설정한다
+
+OBS에서:
+
+```text
+Settings
+    ↓
+Video
+```
+
+로 이동하여 다음과 같이 설정한다.
+
+```text
+Base (Canvas) Resolution       1080 × 1920
+Output (Scaled) Resolution     1080 × 1920
+Common FPS Values              30
+```
+
+여기서 가장 중요한 것은 **Base와 Output을 모두 1080 × 1920으로 유지하는
+것**이다.
+
+이렇게 하면 recording 과정에서 portrait artwork를 landscape canvas에 넣었다가
+다시 scaling하거나 crop할 필요가 없다.
+
+30 fps는 generative artwork를 기록하기에 적당한 기본값이다. 특정 artwork나
+EO1 playback에서 문제가 있을 때만 frame rate나 encoding 조건을 조정한다.
+
+### 4. Browser Source를 정확히 1080 × 1920으로 만든다
+
+OBS의 Sources 영역에서:
+
+```text
++
+    ↓
+Browser
+```
+
+를 선택한다.
+
+Browser Source의 properties에서 다음 값을 지정한다.
+
+```text
+URL       http://localhost:8000/art/example.html
+Width     1080
+Height    1920
+```
+
+가능한 경우 source의 frame rate도 30 fps를 기준으로 한다.
+
+여기서 `Width`와 `Height`는 desktop browser window의 크기가 아니라 **OBS
+내부 browser viewport의 크기**이다.
+
+따라서 browser title bar나 address bar는 존재하지 않는다.
+
+### 5. Browser Source와 OBS canvas를 1:1로 맞춘다
+
+Browser Source를 선택한 뒤:
+
+```text
+Right click
+    ↓
+Transform
+    ↓
+Fit to Screen
+```
+
+을 적용한다.
+
+Source와 canvas가 모두 1080 × 1920이면 scaling 없이 정확히 일치해야 한다.
+
+더 확실하게 확인하려면:
+
+```text
+Right click
+    ↓
+Transform
+    ↓
+Edit Transform
+```
+
+에서 다음 항목을 확인한다.
+
+```text
+Position
+    X = 0
+    Y = 0
+
+Size
+    1080 × 1920
+
+Crop
+    Left   = 0
+    Right  = 0
+    Top    = 0
+    Bottom = 0
+```
+
+즉 최종적으로 다음 관계가 되어야 한다.
+
+```text
+source pixel (0,0)
+        =
+OBS canvas pixel (0,0)
+
+source pixel (1079,1919)
+        =
+OBS canvas pixel (1079,1919)
+```
+
+이 상태라면 별도의 manual crop이나 browser-window alignment가 필요하지 않다.
+
+### 6. OBS preview에서 확인할 사항
+
+녹화 전에 다음을 확인한다.
+
+```text
+[ ] artwork가 canvas 전체를 채우는가
+[ ] 좌우에 예상하지 않은 여백이 없는가
+[ ] 위아래가 잘리지 않았는가
+[ ] browser scrollbar가 나타나지 않는가
+[ ] source가 회전되거나 scaling되지 않았는가
+[ ] crop 값이 모두 0인가
+```
+
+HTML의 `margin: 0`, `padding: 0`, `overflow: hidden` 설정은 특히 중요하다.
+
+검은 배경을 의도했다면 여백과 artwork의 실제 검은 영역을 혼동하지 않도록
+원본 HTML에서도 frame 경계를 확인하는 것이 좋다.
+
+### 7. 녹화
+
+Frame이 정확히 맞는 것을 확인한 뒤 OBS recording을 시작한다.
+
+이 단계에서 중요한 것은 codec을 먼저 최적화하는 것이 아니라 **정확한
+1080 × 1920 master video를 얻는 것**이다.
+
+```text
+HTML/JS artwork
+        ↓
+OBS Browser Source
+        ↓
+1080 × 1920 / 30 fps recording
+        ↓
+master video
+```
+
+OBS의 recording container와 encoder는 PC 환경에 따라 달라질 수 있다.
+최종 결과는 EO1-Museum에서 재생할 수 있는 MP4로 준비한다. 필요할 경우
+recording 후 FFmpeg를 이용하여 MP4로 변환하거나 encoding 조건을 조정할 수
+있다.
+
+### 8. EO1에서 재생
+
+EO1-Museum native application은 이미 MP4 playback을 지원한다. 따라서 기록한
+video는 다음과 같은 기존 media workflow에 넣으면 된다.
+
+```text
+master recording
+        ↓
+필요하면 MP4로 변환
+        ↓
+Safe Sync 또는 ADB transfer
+        ↓
+/sdcard/EO1-Museum/images/
+        ↓
+Local Gallery playback
+```
+
+실제로 문제가 발생하는 경우에만 codec, bitrate, frame rate 등의 encoding
+조건을 조정하면 된다. 별도의 복잡한 검증 절차를 먼저 만들 필요는 없다.
+
+### 9. 왜 이 방식이 EO1-Museum에 적합한가
+
+이 방식은 EO1-Museum의 전체 설계 원칙과도 잘 맞는다.
+
+```text
+PC
+    -> 계산
+    -> artwork 생성
+    -> animation rendering
+    -> video encoding
+    -> curation
+
+EO1
+    -> 저장
+    -> decode
+    -> display
+```
+
+즉 복잡한 작업은 PC가 담당하고, EO1은 이미 완성된 media를 안정적으로
+표시하는 데 집중한다.
+
+정지 artwork에서는 이미 같은 원칙을 사용한다.
+
+```text
+large original image
+        ↓
+PC make_gallery.py
+        ↓
+1080 × 1920 prepared image
+        ↓
+EO1 Local Gallery
+```
+
+Generative artwork에서도 같은 생각을 적용하면:
+
+```text
+HTML5 / JavaScript generative artwork
+        ↓
+PC rendering / recording
+        ↓
+1080 × 1920 prepared video
+        ↓
+EO1 Local Gallery
+```
+
+가 된다.
+
+따라서 HTML5/JavaScript는 반드시 EO1에서 직접 실행해야 하는 **배포 포맷**일
+필요가 없다. PC에서 artwork를 생성하는 **authoring/rendering environment**로
+사용하고, EO1에는 최종 결과인 video만 전달하는 것도 충분히 자연스럽다.
+
+### 10. 현재 workflow
+
+현재 권장 방향은 다음과 같이 정리된다.
+
+```text
+HTML5/JavaScript artwork
+        ↓
+PC에서 실행
+        ↓
+OBS Browser Source
+1080 × 1920 / 30 fps
+        ↓
+MP4
+        ↓
+Safe Sync 또는 ADB
+        ↓
+EO1 Local Gallery
+```
+
+핵심은 HTML5/JavaScript를 EO1에서 반드시 직접 실행해야 하는 배포 포맷으로
+보지 않는 것이다. PC에서는 자유롭게 generative artwork를 만들고, EO1에는
+그 결과를 안정적으로 재생할 수 있는 media로 전달한다.
+
+이 workflow에서 추가적인 검증 절차를 별도로 정의할 필요는 없다. 실제 artwork를
+녹화하여 EO1에서 재생하고, 문제가 발견될 때 필요한 encoding 조건만 조정하면
+된다.
+
+------------------------------------------------------------------------
+
+
 ## 19. README와 upstream attribution
 
 현재 source tree의 root README가 여전히 **spalt의 원본 README**라면,
