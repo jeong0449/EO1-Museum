@@ -133,7 +133,6 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
   </div>
 </main>
 
-
 <section class="guide">
   <div class="guide-inner">
     <h2>Rendering HTML generative art to MP4</h2>
@@ -152,6 +151,8 @@ footer{max-width:1180px;margin:auto;padding:0 28px 40px;color:#6f7682;font-size:
       <a href="https://github.com/jeong0449/EO1-Museum/blob/main/art/render_art.py"><code>art/render_art.py</code></a>.
     </p>
 
+
+    
     <h3>Basic workflow</h3>
     <pre>HTML / JavaScript artwork
         ↓
@@ -167,6 +168,30 @@ H.264 / yuv420p MP4
         ↓
 EO1-Museum /art playback</pre>
 
+<h3>Requirements and setup</h3>
+
+<p>
+  Rendering requires Python, Playwright, Chromium, and FFmpeg.
+  Install Playwright and its Chromium browser with:
+</p>
+
+<pre>pip install playwright
+python -m playwright install chromium</pre>
+
+<p>
+  FFmpeg must also be installed and available from the command line.
+  Its installation can be checked with:
+</p>
+
+<pre>ffmpeg -version</pre>
+
+<p>
+  Once these tools are available, <code>render_art.py</code> uses Playwright
+  to launch headless Chromium, runs the HTML artwork at 1080 × 1920,
+  captures the animation, and uses FFmpeg to produce an H.264 MP4 file
+  suitable for playback on the EO1.
+</p>
+    
     <h3>Basic usage</h3>
     <p>
       Run the renderer from the <code>art/</code> directory, giving it an HTML artwork
