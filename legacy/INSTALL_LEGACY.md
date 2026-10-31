@@ -91,7 +91,7 @@ cache-control headers to reduce stale gallery data on the EO1 browser.
 For a manual test:
 
 ``` text
-python server.py
+python setup_server.py
 ```
 
 A successful start displays `Serving on port 8000`. Keep that window
