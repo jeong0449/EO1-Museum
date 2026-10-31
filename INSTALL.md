@@ -92,13 +92,23 @@ Example:
 
 > **Status:** retrospectively reconstructed; not yet verified as a complete fresh-install sequence on an untouched EO1.
 
-Place or expose the EO1-Museum APK in a location served by `server.py`.
+The EO1-Museum APK is provided in the repository root with the version number in its filename:
+
+    EO1-Museum-v#.##.apk
+
+For example, version 0.42 is distributed as:
+
+    EO1-Museum-v0.42.apk
+
+This file is a renamed copy of the Android debug build generated at:
+
+    android_v#.##\app\build\outputs\apk\debug\app-debug.apk
+
+Place or expose the versioned APK in a location served by `server.py`.
 
 From the EO1's built-in browser, open the corresponding URL, for example:
 
-```text
-http://192.168.1.103:8000/EO1-Museum.apk
-```
+    http://192.168.1.103:8000/EO1-Museum-v0.42.apk
 
 Replace the IP address and filename with the actual values.
 
