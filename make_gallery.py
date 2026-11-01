@@ -195,34 +195,48 @@ for n, src in enumerate(files, 1):
 
 
             # ------------------------------------------------
-            # Optional pan image
+            # Optional pan/detail image
             # ------------------------------------------------
 
             pan_path = None
 
             if ratio > PAN_THRESHOLD:
 
-                # Resize the original so that its height is
-                # exactly the EO1 screen height (1920 px).
+                # Create the wide detail image without upscaling.
                 #
-                # Example:
+                # PAN_HEIGHT is a maximum height, not a target.
                 #
-                #   1400 x 1050
-                #        ↓
-                #   2560 x 1920
+                # Source height > 1920:
+                #     reduce to 1920 px
                 #
-                # The resulting image is wider than the
-                # 1080-pixel EO1 viewport and can therefore
-                # be moved horizontally by index.html.
+                # Source height <= 1920:
+                #     keep original dimensions
+
+                pan_height = min(
+                    source_h,
+                    PAN_HEIGHT
+                )
 
                 pan_width = round(
-                    source_w * PAN_HEIGHT / source_h
+                    source_w *
+                    pan_height /
+                    source_h
                 )
 
-                pan_im = source.resize(
-                    (pan_width, PAN_HEIGHT),
-                    Image.LANCZOS
-                )
+                if pan_height < source_h:
+
+                    pan_im = source.resize(
+                        (
+                            pan_width,
+                            pan_height
+                        ),
+                        Image.LANCZOS
+                    )
+
+                else:
+
+                    pan_im = source.copy()
+
 
                 pan_im.save(
                     pan_out,
@@ -236,8 +250,6 @@ for n, src in enumerate(files, 1):
                 )
 
                 pan_count += 1
-
-
         # Store Network Gallery metadata.
         #
         # Normal image:
