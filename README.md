@@ -57,25 +57,7 @@ Firefox and MetBoot are **not required for normal operation of the current nativ
 
 ### Legacy Browser-Based Installation
 
-The earlier Firefox + MetBoot installation procedure is preserved separately in [Legacy Installation Guide](legacy/INSTALL_LEGACY.md).
-
-In that architecture, the EO1 required a Wi-Fi connection to the PC-hosted gallery during normal operation:
-
-```text
-Android boot
-     ↓
-MetBoot
-     ↓
-Firefox 68.11.0
-     ↓
-PC-hosted EO1-Museum gallery
-```
-
-The associated Windows batch files—`START_EO1.bat`, `UPDATE_MET.bat`, and `GET_MET_AND_START.bat`—also belong to this earlier browser-based workflow.
-
-These files and instructions are retained for **historical reference and reproducibility**, rather than as the recommended setup for the current EO1-Museum application.
-
-For the full history of this architecture and its transition to the native application, see [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
+The earlier Firefox + MetBoot workflow is preserved in the [Legacy Installation Guide](legacy/INSTALL_LEGACY.md) for historical reference and reproducibility.
 
 ## Museum Collections
 
