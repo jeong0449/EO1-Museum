@@ -51,17 +51,21 @@ body {
  * The same pan_####.jpg is loaded into both.
  * They alternate so that Left -> Center -> Right
  * can cross-dissolve directly.
+ *
+ * Detail images are never enlarged beyond
+ * their actual pixel dimensions.
  */
 .detail {
     position: absolute;
 
     left: 0;
-	top: 0;
+    top: 0;
 
-	height: 100%;
-	width: auto;
+    width: auto;
+    height: auto;
 
-	max-width: none;
+    max-width: none;
+    max-height: 1920px;
 
     background: #000;
 
@@ -270,6 +274,13 @@ body {
             "0px";
 
         detailB.style.left =
+            "0px";
+
+
+        detailA.style.top =
+            "0px";
+
+        detailB.style.top =
             "0px";
     }
 
@@ -503,16 +514,55 @@ body {
         var viewportWidth =
             window.innerWidth;
 
+        var viewportHeight =
+            window.innerHeight;
+
 
         /*
          * Both detail layers contain
          * the same image and have the
-         * same displayed width.
+         * same displayed dimensions.
          */
         var imageWidth =
             detailA.offsetWidth;
 
+        var imageHeight =
+            detailA.offsetHeight;
 
+
+        /*
+         * --------------------------------------------------------
+         * Vertical position
+         * --------------------------------------------------------
+         *
+         * A detail image smaller than the EO1 screen is
+         * NOT enlarged.
+         *
+         * Instead, it is centered vertically once.
+         *
+         * This top position remains unchanged during
+         * Left -> Center -> Right.
+         */
+
+        var topPosition =
+            Math.max(
+                0,
+                (viewportHeight - imageHeight) / 2
+            );
+
+
+        detailA.style.top =
+            topPosition +
+            "px";
+
+        detailB.style.top =
+            topPosition +
+            "px";
+
+
+        /*
+         * Horizontal travel distance.
+         */
         var distance =
             Math.max(
                 0,
@@ -539,6 +589,8 @@ body {
 
         /*
          * Left / Center / Right positions.
+         *
+         * Only the horizontal coordinate changes.
          */
         var leftPosition =
             0;
