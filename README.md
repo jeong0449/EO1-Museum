@@ -1,16 +1,12 @@
 # EO1-Museum
 
 > **Current version — EO1-Museum v0.42**
->
-> EO1-Museum revives the discontinued **Electric Objects EO1** as a standalone digital art display using a native Android application and PC-side tools.
->
-> It displays curated museum artworks from open-access collections as well as **generative art rendered as video**. Artwork can be discovered and prepared on a PC, previewed over the network, synchronized to the EO1, and then displayed independently from its internal storage.
->
-> **Generative Art Gallery:** https://jeong0449.github.io/EO1-Museum/art/
 
-EO1-Museum brings an [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a digital museum display. It combines a lightweight native Android application on the EO1 with PC-side tools for discovering, curating, preparing, and synchronizing artwork from open-access museum collections.
+EO1-Museum brings the discontinued [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a standalone digital art display for **curated open-access artworks and generative art**.
 
-The project began with The Metropolitan Museum of Art collection and is designed to accommodate artworks from other open-access collections as well.
+The project combines a lightweight native Android application on the EO1 with PC-side tools for discovering, curating, preparing, and synchronizing artwork. Once transferred to the EO1, collections can be displayed independently without a PC or network connection.
+
+Artwork discovery currently draws on **The Metropolitan Museum of Art** and **Wikimedia Commons**, while generative artworks created with HTML and JavaScript are rendered as video for playback on the EO1.
 
 <p align="center">
   <img src="images/sample_2.jpg" width="350" alt="Claude Monet, The Apple Tree (Le Pommier), displayed on the EO1">
@@ -59,36 +55,26 @@ Firefox and MetBoot are **not required for normal operation of the current nativ
 
 The earlier Firefox + MetBoot workflow is preserved in the [Legacy Installation Guide](legacy/INSTALL_LEGACY.md) for historical reference and reproducibility.
 
-## Museum Collections
 
-EO1-Museum currently supports two primary sources for discovering open-access artworks: **The Metropolitan Museum of Art (The Met)** and **Wikimedia Commons**. Future versions may expand beyond conventional museum collections to include **space imagery provided by NASA** and **open-access collections from Korean museums and cultural institutions**. These additions are intended to broaden EO1-Museum from a museum-art display into a more flexible platform for exploring and presenting openly accessible visual culture and scientific imagery.
+## Artwork and Collections
 
-**The Met** provides a well-structured institutional collection with rich metadata. EO1-Museum can search its open-access collection using artist names, keywords, subjects, periods, cultures, and other metadata, making it particularly useful for systematic and curated discovery.
+EO1-Museum displays both **curated open-access artworks** and **generative art**.
 
-**Wikimedia Commons** provides a much broader pool of public-domain and freely reusable artwork images gathered from museums and cultural institutions around the world. EO1-Museum uses artist-based discovery, image-resolution filtering, license checks, and local metadata caching to identify suitable works. Because the collection is broader and less uniform than a single museum database, the workflow also supports human curation through persistent reject lists.
+### Open-Access Collections
 
-The two sources therefore complement each other:
+Artwork discovery and curation are handled on the PC using **Python tools included with EO1-Museum**. These tools currently support artwork discovery from **The Metropolitan Museum of Art** and **Wikimedia Commons**. The Met provides structured collection metadata, while Wikimedia Commons provides access to a much broader range of public-domain and freely reusable artwork from institutions around the world.
 
-```text
-The Met
-   └── structured, museum-based discovery
+Selected artworks are downloaded and prepared on the PC for the EO1's 1080 × 1920 portrait display. The resulting collection can then be viewed through PC Gallery or transferred to the EO1 for independent playback in Local Gallery.
 
-Wikimedia Commons
-   └── broad, cross-collection discovery
-```
-Discovered artworks are downloaded to the PC, curated locally, and processed for the EO1's 1080 × 1920 portrait display. The resulting gallery can be viewed directly through PC Gallery or transferred to the EO1's internal storage using Safe Sync for independent Local Gallery playback.
-
-Detailed search syntax, command-line options, examples, caching behavior, and curation workflows are documented separately in [Search Examples](SEARCH_EXAMPLES.md).
-
-The discovery system is intentionally extensible, so additional open-access collections can be added when suitable image and metadata sources are available.
-
-In this sense, EO1-Museum can also be seen as a small experiment in what might be called **“Fine Art Informatics”** — using open cultural data, metadata, computation, human curation, and digital displays to discover, organize, and experience works of art.
+For search commands, filtering, caching, and curation workflows, see [Search Examples](SEARCH_EXAMPLES.md).
 
 ### Generative Art
 
 EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render these animations smoothly in real time, the works are rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
 
 The artworks, interactive browser versions, and a brief description of the rendering workflow are available in the [Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/).
+
+In this sense, EO1-Museum can also be seen as a small experiment in what might be called **“Fine Art Informatics”** — using open cultural data, metadata, computation, human curation, and digital displays to discover, organize, and experience works of art.
 
 ## Inspiration and Prior Work
 
@@ -100,5 +86,10 @@ For detailed discussion of these earlier projects and their influence on EO1-Mus
 
 ## Documentation
 
+- [Installation Guide](INSTALL.md) — installation, updates, and maintenance
+- [Search Examples](SEARCH_EXAMPLES.md) — artwork discovery and curation
+- [Development History](docs/DEVELOPMENT_HISTORY.md) — evolution of EO1-Museum
+- [Inspiration and Prior Work](docs/PRIOR_WORK.md) — earlier EO1 revival projects
 - [Roadmap](docs/ROADMAP.md) — planned improvements and future directions
+- [Legacy Installation Guide](legacy/INSTALL_LEGACY.md) — Firefox/MetBoot-based installation
 
