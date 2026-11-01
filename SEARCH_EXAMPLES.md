@@ -1,6 +1,6 @@
 # Search Examples
 
-**Last updated:** 2026-10-29
+**Last updated:** 2026-11-01
 
 EO1-Museum currently provides two artwork discovery tools:
 
@@ -15,39 +15,76 @@ The Met provides a well-structured museum collection with rich metadata. Wikimed
 
 # 1. The Metropolitan Museum of Art
 
-## Basic search
+`GET_MET_ART_KEYWORD.py` searches The Metropolitan Museum of Art Open Access dataset (`MetObjects.csv`) and uses the Met Collection API when downloading images.
 
-`GET_MET_ART_KEYWORD.py` searches the Met Open Access dataset (`MetObjects.csv`) and then uses the Met Collection API when downloading images.
+The tool is intended not only as a downloader, but also as a lightweight artwork discovery and curation tool. Searches can combine artist, date, geographic region, medium, culture, subject, tags, and the Met Highlight designation.
 
-The current version supports command-line searches as well as interactive operation.
+The current version supports both command-line searches and interactive operation.
 
-A simple artist search can be previewed without downloading anything:
+## Start with dry-run
+
+Before downloading artwork, it is usually useful to preview the search:
 
     python GET_MET_ART_KEYWORD.py --type painting --artist "Pierre-Auguste Renoir" --dry-run
 
-To actually create the collection:
+Dry-run reports the number of matching metadata records and prints a reproducible command for the actual download.
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Pierre-Auguste Renoir" --target 100
+It does not modify the current artwork collection, `met_metadata.json`, or the archive.
+
+If `MetObjects.csv` is not already present, however, the Open Access dataset may still be downloaded because it is required for searching.
+
+Dry-run does not save the filtered metadata records as a separate file. It reports the number of matches only.
+
+---
+
+## Artist search
 
 The `--artist` option searches the `Artist Display Name` field specifically.
 
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Vincent van Gogh" --dry-run
+
+To download the selected works:
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Vincent van Gogh" --target 100
+
 Multiple artists separated by commas are treated as alternatives (OR):
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir, Pissarro, Sisley" --dry-run
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir,Pissarro,Sisley" --dry-run
+
+This can be useful for building a small collection around a group of related artists:
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Amedeo Modigliani,Gustav Klimt,Egon Schiele" --target 10
+
+The number of usable works may be much smaller than the target because the Met Open Access collection contains only a limited number of eligible works for some artists.
 
 ---
 
 ## General metadata search
 
-The `--query` option searches multiple metadata fields, including title, artist information, object name, classification, medium, culture, period, dynasty, object date, department, and tags.
+The `--query` option performs a broad search across multiple metadata fields, including:
+
+- title
+- artist name and biographical information
+- artist nationality
+- object name
+- classification
+- medium
+- culture
+- country and region
+- period and dynasty
+- object date
+- department
+- tags
 
 Words separated by spaces are treated as AND conditions:
 
     --query "edo landscape"
 
-Commas separate alternative searches (OR):
+Commas separate alternatives (OR):
 
-    --query "landscape, garden"
+    --query "landscape,garden"
 
 For example:
 
@@ -57,45 +94,207 @@ or:
 
     python GET_MET_ART_KEYWORD.py --type painting --query "edo landscape" --dry-run
 
-Artist and general metadata filters can be combined. In that case both conditions must match:
+Artist and general metadata filters can be combined:
 
     python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir" --query "portrait" --dry-run
 
-This is often preferable to using an artist name as a general keyword because `--artist` is restricted to the actual artist-name field.
+In this case, both conditions must match.
+
+For a specific artist, `--artist` is generally preferable to using the artist's name as a general keyword.
 
 ---
 
-## Dry-run first
+## Search by date
 
-Before downloading a new collection, it is often useful to add:
+The `--year` option accepts either a single year:
 
-    --dry-run
+    --year 1888
 
-For example:
+or a range:
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Vincent van Gogh" --dry-run
+    --year 1600-1750
 
-Dry-run reports the matching metadata count and prints a reproducible command that can be used for the actual download.
+For example, to explore European paintings from the Baroque period:
 
-It does **not** modify the current artwork collection, `met_metadata.json`, or the archive.
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --dry-run
 
-If `MetObjects.csv` is not already present, however, the Open Access dataset may still be downloaded because it is required for searching.
+To narrow this to oil paintings:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --dry-run
+
+A date range is particularly useful when an art-historical period is not represented consistently in the Met metadata.
+
+For example, a broad exploration of the two centuries leading up to Impressionism can be approximated with:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --dry-run
 
 ---
 
-## Target size
+## Geographic region
 
-The default target is 100 works.
+The `--region` option provides broad geographic and cultural filtering.
 
-A different number can be specified with:
+Current values are:
 
-    --target 50
+- `asia`
+- `europe`
+- `africa`
+- `americas`
+- `oceania`
 
 For example:
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Pissarro" --target 50
+    python GET_MET_ART_KEYWORD.py --type painting --region europe --dry-run
 
-If fewer eligible works are available, EO1-Museum uses what it can find.
+or:
+
+    python GET_MET_ART_KEYWORD.py --type all --region asia --dry-run
+
+Region filtering is intentionally broad. It is designed for discovery rather than precise geographic or art-historical classification.
+
+It can be combined with other filters:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --target 20
+
+---
+
+## Medium
+
+The `--medium` option searches the Met `Medium` metadata.
+
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type painting --medium oil --dry-run
+
+Multiple terms separated by commas are alternatives (OR):
+
+    python GET_MET_ART_KEYWORD.py --type painting --medium "oil,tempera" --dry-run
+
+Medium is especially useful in combination with date and region:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --dry-run
+
+For works other than paintings:
+
+    python GET_MET_ART_KEYWORD.py --type all --object print --medium lithograph --dry-run
+
+---
+
+## Culture
+
+The `--culture` option searches the Met `Culture` field.
+
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type all --culture japanese --dry-run
+
+Multiple alternatives can be supplied:
+
+    python GET_MET_ART_KEYWORD.py --type all --culture "japanese,chinese" --dry-run
+
+The Met's Culture metadata is not a controlled art-historical taxonomy for every object. Similar material may be described in different ways, so `--culture` should be treated as a discovery filter rather than an exhaustive classification.
+
+If a culture search produces unexpectedly few results, try `--query`, `--artist`, or other metadata filters instead.
+
+---
+
+## Tags
+
+The Met dataset contains descriptive tags for many objects.
+
+The `--tag` option searches this field directly.
+
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type painting --tag flowers --dry-run
+
+Multiple tags separated by commas are treated as alternatives (OR):
+
+    python GET_MET_ART_KEYWORD.py --type painting --tag "flowers,birds" --dry-run
+
+A tag can be combined with other filters:
+
+    python GET_MET_ART_KEYWORD.py --type painting --region europe --tag flowers --dry-run
+
+or:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1800-1900 --tag portrait --dry-run
+
+Tags are useful for visually oriented curation because they often describe what is actually depicted rather than only when or where the object was made.
+
+---
+
+## Met Highlights
+
+The `--highlight` option restricts the search to objects marked as highlights by The Metropolitan Museum of Art.
+
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type painting --highlight --dry-run
+
+This becomes particularly useful when combined with other filters.
+
+European oil paintings from approximately the two centuries before Impressionism:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --highlight --dry-run
+
+To download up to 100 works using exactly those criteria:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --highlight --target 100
+
+Highlights provide a convenient way to create a smaller, museum-curated pool from a much larger metadata search.
+
+---
+
+## Combining filters: curation examples
+
+The main strength of the Met tool is that filters can be combined to construct a curatorial theme.
+
+### Baroque-era European oil paintings
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --dry-run
+
+To restrict this to Met Highlights:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --highlight --dry-run
+
+### European painting before Impressionism
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --dry-run
+
+For a smaller museum-selected pool:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1670-1870 --region europe --medium oil --highlight --dry-run
+
+### European flower paintings
+
+    python GET_MET_ART_KEYWORD.py --type painting --region europe --tag flowers --dry-run
+
+### Nineteenth-century European landscapes
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1800-1900 --region europe --subject 3 --dry-run
+
+### Impressionist and Post-Impressionist artists
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir,Pissarro,Sisley,Degas,Manet,Cezanne,Van Gogh,Gauguin" --dry-run
+
+### A small early-twentieth-century European collection
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Amedeo Modigliani,Gustav Klimt,Egon Schiele" --target 10
+
+### Portraits from the nineteenth century
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1800-1900 --subject 2 --dry-run
+
+### Still life and flowers
+
+    python GET_MET_ART_KEYWORD.py --type painting --subject 4 --dry-run
+
+### Animals in Asian art
+
+    python GET_MET_ART_KEYWORD.py --type all --region asia --subject 6 --dry-run
+
+These searches are deliberately flexible. They are intended to generate interesting candidate pools rather than reproduce a formal art-historical catalog.
 
 ---
 
@@ -118,7 +317,11 @@ For example, landscapes and city scenes:
 
     python GET_MET_ART_KEYWORD.py --type painting --subject 3,5 --dry-run
 
-Subject filters can also be combined with an artist:
+Subject filters can also be combined with other metadata:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1800-1900 --region europe --subject 3 --dry-run
+
+or with an artist:
 
     python GET_MET_ART_KEYWORD.py --type painting --artist "Pissarro" --subject 3,5 --dry-run
 
@@ -140,7 +343,29 @@ For example:
 
     python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir" --color --dry-run
 
-Note that actual color filtering requires examining downloaded image data. Therefore dry-run can report the metadata search result, but it cannot determine the final number of images that will pass the color test.
+Actual color filtering requires examining downloaded image data. Therefore dry-run can report the metadata search result, but it cannot determine the final number of images that will pass the color test.
+
+---
+
+## Target size
+
+The default target is 100 works.
+
+A different number can be specified with:
+
+    --target 50
+
+For example:
+
+    python GET_MET_ART_KEYWORD.py --type painting --artist "Pissarro" --target 50
+
+For a small addition to an existing collection:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --target 10
+
+If fewer eligible works are available, EO1-Museum uses what it can find.
+
+The target is an upper limit on the selected candidate set. It does not guarantee that the requested number of new works will be added, particularly when eligible works are already present in the current collection.
 
 ---
 
@@ -163,13 +388,27 @@ Optional object filters include:
 - manuscript / book
 - poster / graphic design
 
-For example:
+For example, Japanese prints:
 
-    python GET_MET_ART_KEYWORD.py --type all --object ceramics --query "joseon" --dry-run
+    python GET_MET_ART_KEYWORD.py --type all --object print --query japanese --dry-run
 
-or:
+Prints by several major Japanese artists:
 
-    python GET_MET_ART_KEYWORD.py --type all --object print --query "japanese" --dry-run
+    python GET_MET_ART_KEYWORD.py --type all --object print --artist "Hokusai,Hiroshige,Utamaro,Kuniyoshi" --dry-run
+
+Korean ceramics:
+
+    python GET_MET_ART_KEYWORD.py --type all --object ceramics --query joseon --dry-run
+
+Asian prints:
+
+    python GET_MET_ART_KEYWORD.py --type all --object print --region asia --dry-run
+
+Lithographs:
+
+    python GET_MET_ART_KEYWORD.py --type all --object print --medium lithograph --dry-run
+
+The `--type all` mode is particularly useful for artists whose important works are not primarily paintings.
 
 ---
 
@@ -189,63 +428,31 @@ To compare those records with the current Met Collection API:
 
 Diagnostic mode does not modify the artwork collection.
 
-This can be useful when the number of available works seems unexpectedly small.
+This can be particularly useful when an artist is known to be represented at the Met but a normal search returns few or no downloadable works.
 
 ---
 
-## Some useful Met search terms
+## Search strategy
 
-The following examples were found while exploring the Met Open Access dataset.
+There is no single best metadata field for every type of artwork search.
 
-The counts are approximate and should **not** be interpreted as official collection statistics. The dataset and EO1-Museum filtering rules may change over time.
+A useful rule of thumb is:
 
-### European artists
+- use `--artist` when you know the artist
+- use `--year` for a historical time window
+- use `--region` for broad geographic discovery
+- use `--medium` for material or technique
+- use `--culture` when the Met Culture field is likely to be informative
+- use `--tag` for depicted subjects
+- use `--highlight` when you want a smaller museum-selected pool
+- use `--query` when you want to search broadly across metadata
+- combine filters when you want to construct a more specific curatorial theme
 
-| Search term | Approx. matches |
-|---|---:|
-| renoir | 27 |
-| cezanne | 24 |
-| degas | 23 |
-| manet | 21 |
-| pissarro | 20 |
-| van gogh | 18 |
-| gauguin | 10 |
-| seurat | 10 |
-| sisley | 8 |
-| morisot | 2 |
+For example, instead of searching for the word `baroque`, it may be more productive to construct the intended collection explicitly:
 
-For current versions of the script, artist searches are preferably made with `--artist` rather than treating the name as a general metadata keyword.
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --highlight --dry-run
 
-Example:
-
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Pissarro" --dry-run
-
-### Asian art
-
-| Search term | Approx. matches |
-|---|---:|
-| hokusai | 61 |
-| shibata zeshin | 80 |
-| kyosai | 49 |
-| edo | 941 |
-| qing | 498 |
-| ming | 204 |
-| joseon | 69 |
-| goryeo | 6 |
-
-These terms may refer to artists, periods, cultures, dynasties, titles, or other metadata. Use `--artist` for a specific artist and `--query` for broader metadata exploration.
-
-### Subjects
-
-| Search term | Approx. matches |
-|---|---:|
-| portrait | 814 |
-| landscape | 351 |
-| cat | 210 |
-| sea | 106 |
-| flowers | 105 |
-
-Again, these are approximate discovery results rather than catalog statistics.
+This reflects the basic philosophy of the Met discovery tool: use structured metadata to build a candidate collection, inspect the result, and then refine the search.
 
 ---
 
@@ -431,15 +638,19 @@ Use `GET_MET_ART_KEYWORD.py` when you want:
 
 - fast searches over a well-structured museum dataset
 - artist searches
-- general keyword searches
-- subject filters
-- object-type filters
-- exploration by culture, period, medium, subject, or other metadata
+- date and geographic filtering
+- medium, culture, and tag filtering
+- Met Highlight selection
+- subject and object-type filters
+- broad metadata searches
+- combinations of structured filters for thematic curation
 - relatively consistent source quality
 
 Example:
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Renoir" --dry-run
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --highlight --dry-run
+
+The Met tool is particularly useful when you want to construct a collection from several curatorial criteria rather than search for one artist only.
 
 ## Wikimedia Commons
 
@@ -454,7 +665,7 @@ Example:
 
     python GET_COMMONS_ART.py --artist "Claude Monet" --dry-run
 
-The Met can be thought of as **curated discovery**, while Wikimedia Commons provides **broad discovery**.
+The Met can be thought of as **structured, metadata-driven curation**, while Wikimedia Commons provides **broader artist-centered discovery**.
 
 Neither completely replaces the other.
 
@@ -462,15 +673,25 @@ Neither completely replaces the other.
 
 # 4. A practical workflow
 
-For a new artist, a useful workflow is to start with The Met:
+For a new artist or curatorial theme, a useful workflow is to start with The Met.
+
+For an artist:
 
     python GET_MET_ART_KEYWORD.py --type painting --artist "Vincent van Gogh" --dry-run
 
-If the result looks useful, download the desired number:
+For a historical theme:
 
-    python GET_MET_ART_KEYWORD.py --type painting --artist "Vincent van Gogh" --target 100
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --dry-run
 
-For broader discovery, try Commons:
+For a smaller museum-selected pool:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --highlight --dry-run
+
+If the result looks useful, remove `--dry-run` and specify the desired target:
+
+    python GET_MET_ART_KEYWORD.py --type painting --year 1600-1750 --region europe --medium oil --highlight --target 20
+
+For broader artist-centered discovery, try Commons:
 
     python GET_COMMONS_ART.py --artist "Vincent van Gogh" --dry-run
 
@@ -480,11 +701,29 @@ Then download from the cached pool:
 
     python GET_COMMONS_ART.py --artist "Vincent van Gogh" --target 100
 
-After viewing the resulting images on EO1, add visually unsuitable works to:
+After viewing the resulting images on EO1, add visually unsuitable Commons works to:
 
     metadata/Vincent_van_Gogh_reject.txt
 
 and run the Commons selection again.
+
+The overall process is therefore iterative:
+
+    define a theme
+          ↓
+    dry-run
+          ↓
+    inspect the number of candidates
+          ↓
+    refine the filters
+          ↓
+    download a collection
+          ↓
+    view it on EO1
+          ↓
+    refine again
+
+The search tools are discovery aids. Final curation remains a human decision.
 
 ---
 
@@ -499,22 +738,26 @@ Regardless of the source, selected artwork eventually follows the same EO1-Museu
     Wikimedia Commons               ├──> original/
        │                            │
        └── GET_COMMONS_ART.py ──────┘
-                                           │
-                                           ▼
-                                    make_gallery.py
-                                           │
-                                           ▼
-                                        display/
-                                           │
-                                           ▼
-                                          EO1
+                                    │
+                                    ▼
+                              make_gallery.py
+                                    │
+                                    ▼
+                                display/
+                                    │
+                                    ▼
+                                   EO1
 
 The discovery tools answer the question:
 
 **What artwork can I find and actually use?**
 
+For the Met tool, that question can now be refined further:
+
+**What kind of collection do I want to curate?**
+
 `make_gallery.py` and the EO1 application then answer the next question:
 
 **How should those works be prepared and displayed on the EO1?**
 
-Try different artists, subjects, and collections. Unexpected discoveries can sometimes make the most interesting exhibitions.
+Try different artists, periods, regions, media, subjects, and combinations of filters. Unexpected discoveries can sometimes make the most interesting exhibitions.
