@@ -164,7 +164,40 @@ Select **PC Gallery** on the EO1.
 
 PC Gallery is displayed inside the native application using its embedded WebView, so Firefox is not required.
 
-## 8. Safe Sync
+## 8. Configuration and Trusted Server
+
+EO1-Museum stores its network and Safe Sync settings in:
+
+    /sdcard/EO1-Museum/.config
+
+You do **not** need to create this file manually. On first launch, EO1-Museum automatically creates `.config` with default settings.
+
+The default configuration includes:
+
+    NETWORK_HOST=192.168.1.103
+    NETWORK_PORT=8000
+    CONNECT_TIMEOUT_SEC=10
+    MAX_MEDIA_FILES=100
+    MIN_FREE_MB=200
+    TRUSTED_SERVER=EO1M-8F29C74A
+
+For normal use, the setting most likely to require adjustment is `NETWORK_HOST`. Use **Network Gallery Address** in the EO1-Museum control menu to enter the IP address and port of the PC running `server.py`. EO1-Museum saves the new values to `.config` automatically.
+
+`TRUSTED_SERVER` is used by Safe Sync to verify the identity of the PC Gallery server. The default value:
+
+    EO1M-8F29C74A
+
+matches the default server ID built into `server.py`, so no change is normally required.
+
+If a different server ID is desired, start the PC server with:
+
+    python server.py --sync --server-id <SERVER_ID>
+
+and set `TRUSTED_SERVER` in `.config` to the same value.
+
+This configuration belongs to the current native EO1-Museum application. It is not required by the earlier Firefox + MetBoot legacy architecture.
+
+## 9. Safe Sync
 
 To copy the prepared exhibition into EO1 internal storage:
 
@@ -194,7 +227,7 @@ Safe Sync uses temporary downloads before replacing existing files and respects 
 
 After synchronization, Local Gallery can operate without the PC server.
 
-## 9. Normal workflow
+## 10. Normal workflow
 
 ```text
 PC
@@ -227,7 +260,7 @@ Use this path when you want to:
 
 Unlike the simplified Part I procedure, this path was used extensively during EO1-Museum development.
 
-## 10. The EO1 ADB authorization problem
+## 11. The EO1 ADB authorization problem
 
 The EO1 has no touchscreen. When a new PC connects through USB ADB, Android normally displays an RSA authorization dialog.
 
@@ -237,7 +270,7 @@ The micro-USB port is also used for the OTG keyboard/mouse connection, so the mo
 
 ADBApprovalHelper is **not required for normal EO1-Museum operation**.
 
-## 11. Install and enable ADBApprovalHelper
+## 12. Install and enable ADBApprovalHelper
 
 Before switching from the OTG keyboard/mouse setup to the development PC, install `ADBApprovalHelper.apk`.
 
@@ -255,7 +288,7 @@ After installation, enable its AccessibilityService in Android settings.
 
 > Installing the APK alone does not necessarily enable its AccessibilityService.
 
-## 12. Connect with ADB
+## 13. Connect with ADB
 
 Connect the EO1 directly to the PC by USB:
 
@@ -277,7 +310,7 @@ The author's development unit uses serial:
 
 Do not assume another EO1 will have the same serial number.
 
-## 13. Install or update EO1-Museum
+## 14. Install or update EO1-Museum
 
 Install:
 
@@ -309,7 +342,7 @@ Launch it:
 adb -s <EO1_SERIAL> shell monkey -p com.dan.eo1 -c android.intent.category.LAUNCHER 1
 ```
 
-## 14. Transfer media directly with ADB
+## 15. Transfer media directly with ADB
 
 Safe Sync is preferred for normal use, but ADB can copy media directly.
 
@@ -332,7 +365,7 @@ adb -s <EO1_SERIAL> push artwork.jpg /sdcard/EO1-Museum/images/
 adb -s <EO1_SERIAL> push artwork.mp4 /sdcard/EO1-Museum/images/
 ```
 
-## 15. Useful maintenance commands
+## 16. Useful maintenance commands
 
 ```powershell
 adb devices
@@ -344,7 +377,7 @@ adb -s <EO1_SERIAL> shell am force-stop com.dan.eo1
 adb -s <EO1_SERIAL> shell monkey -p com.dan.eo1 -c android.intent.category.LAUNCHER 1
 ```
 
-## 16. Wireless ADB
+## 17. Wireless ADB
 
 After an initial USB ADB connection:
 
