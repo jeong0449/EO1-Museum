@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import json
 
 try:
     from PIL import Image, ImageOps
@@ -24,6 +25,9 @@ except ImportError:
 #   Cleveland Museum of Art
 #   personal images
 #   etc.
+#
+# Wide landscape images can also receive a pre-rendered
+# horizontal-pan image for Network Gallery.
 # ============================================================
 
 ROOT = Path(__file__).resolve().parent
@@ -34,6 +38,11 @@ DST = ROOT / "display"
 W, H = 1080, 1920
 QUALITY = 90
 SERVER_ID = "EO1M-8F29C74A"
+
+# Wide-artwork pan settings
+PAN_THRESHOLD = 1.2
+PAN_HEIGHT = H
+PAN_QUALITY = 90
 
 EXTS = {
     ".jpg",
@@ -64,6 +73,7 @@ files = sorted(
     and p.suffix.lower() in EXTS
 )
 
+
 if not files:
     print()
     print("No images found in:")
@@ -79,9 +89,10 @@ print("EO1-Museum Gallery Builder")
 print("=" * 60)
 
 print()
-print(f"Source : {SRC}")
-print(f"Images : {len(files)}")
-print(f"Output : {DST}")
+print(f"Source        : {SRC}")
+print(f"Images        : {len(files)}")
+print(f"Output        : {DST}")
+print(f"Pan threshold : > {PAN_THRESHOLD}")
 print()
 
 
@@ -115,21 +126,41 @@ print("Building gallery...")
 print()
 
 made = []
+pan_count = 0
+
 
 for n, src in enumerate(files, 1):
 
     outname = f"{n:04d}.jpg"
     out = DST / outname
 
+    pan_outname = f"pan_{outname}"
+    pan_out = DST / pan_outname
+
     try:
 
-        with Image.open(src) as im:
+        with Image.open(src) as source:
 
-            # Correct orientation using EXIF metadata
-            im = ImageOps.exif_transpose(im)
+            # Correct orientation using EXIF metadata.
+            source = ImageOps.exif_transpose(source)
 
-            # Convert to RGB for JPEG output
-            im = im.convert("RGB")
+            # Convert to RGB for JPEG output.
+            source = source.convert("RGB")
+
+            # IMPORTANT:
+            # Determine the aspect ratio BEFORE creating the
+            # normal 1080 x 1920 display image.
+            source_w, source_h = source.size
+            ratio = source_w / source_h
+
+
+            # ------------------------------------------------
+            # Normal EO1 display image
+            # ------------------------------------------------
+
+            # Work on a copy because the source image may also
+            # be needed for generation of the pan image.
+            im = source.copy()
 
             # Preserve aspect ratio and fit inside
             # the EO1's 1080 x 1920 portrait display.
@@ -138,14 +169,14 @@ for n, src in enumerate(files, 1):
                 Image.LANCZOS
             )
 
-            # Black 1080 x 1920 canvas
+            # Black 1080 x 1920 canvas.
             canvas = Image.new(
                 "RGB",
                 (W, H),
                 (0, 0, 0)
             )
 
-            # Center image
+            # Center image.
             x = (W - im.width) // 2
             y = (H - im.height) // 2
 
@@ -154,7 +185,7 @@ for n, src in enumerate(files, 1):
                 (x, y)
             )
 
-            # Save optimized JPEG
+            # Save optimized JPEG.
             canvas.save(
                 out,
                 "JPEG",
@@ -162,14 +193,94 @@ for n, src in enumerate(files, 1):
                 optimize=True
             )
 
+
+            # ------------------------------------------------
+            # Optional pan image
+            # ------------------------------------------------
+
+            pan_path = None
+
+            if ratio > PAN_THRESHOLD:
+
+                # Resize the original so that its height is
+                # exactly the EO1 screen height (1920 px).
+                #
+                # Example:
+                #
+                #   1400 x 1050
+                #        ↓
+                #   2560 x 1920
+                #
+                # The resulting image is wider than the
+                # 1080-pixel EO1 viewport and can therefore
+                # be moved horizontally by index.html.
+
+                pan_width = round(
+                    source_w * PAN_HEIGHT / source_h
+                )
+
+                pan_im = source.resize(
+                    (pan_width, PAN_HEIGHT),
+                    Image.LANCZOS
+                )
+
+                pan_im.save(
+                    pan_out,
+                    "JPEG",
+                    quality=PAN_QUALITY,
+                    optimize=True
+                )
+
+                pan_path = (
+                    "display/" + pan_outname
+                )
+
+                pan_count += 1
+
+
+        # Store Network Gallery metadata.
+        #
+        # Normal image:
+        #
+        # {
+        #   "display": "display/0001.jpg",
+        #   "pan": null
+        # }
+        #
+        # Wide image:
+        #
+        # {
+        #   "display": "display/0002.jpg",
+        #   "pan": "display/pan_0002.jpg"
+        # }
+
         made.append(
-            "display/" + outname
+            {
+                "display": (
+                    "display/" + outname
+                ),
+                "pan": pan_path
+            }
         )
 
-        print(
-            f"[{n:3}/{len(files)}] "
-            f"{src.name} -> {outname}"
-        )
+
+        if pan_path:
+
+            print(
+                f"[{n:3}/{len(files)}] "
+                f"{src.name} -> "
+                f"{outname} + {pan_outname} "
+                f"(ratio {ratio:.2f})"
+            )
+
+        else:
+
+            print(
+                f"[{n:3}/{len(files)}] "
+                f"{src.name} -> {outname} "
+                f"(ratio {ratio:.2f})"
+            )
+
 
     except Exception as e:
 
@@ -185,12 +296,13 @@ for n, src in enumerate(files, 1):
 
 js = (
     f"// server-id: {SERVER_ID}\n"
-    "var images = [\n"
-    + "".join(
-        f'  "{s.replace(chr(92), "/")}",\n'
-        for s in made
+    "var images = "
+    + json.dumps(
+        made,
+        ensure_ascii=False,
+        indent=2
     )
-    + "];\n"
+    + ";\n"
 )
 
 (ROOT / "images.js").write_text(
@@ -209,12 +321,21 @@ print("Gallery complete")
 print("=" * 60)
 
 print()
+
 print(
     f"Source images : {len(files)}"
 )
 
 print(
     f"Created       : {len(made)}"
+)
+
+print(
+    f"Pan images    : {pan_count}"
+)
+
+print(
+    f"Pan threshold : > {PAN_THRESHOLD}"
 )
 
 print(
@@ -230,12 +351,15 @@ print(
     f"{ROOT / 'images.js'}"
 )
 
+
 if len(made) != len(files):
 
     print()
+
     print(
         f"Skipped       : "
         f"{len(files) - len(made)}"
     )
+
 
 print()

@@ -2,54 +2,801 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>EO1 Gallery</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>EO1 Museum</title>
+
 <style>
-html, body {
-  margin: 0; padding: 0; width: 100%; height: 100%;
-  overflow: hidden; background: #000;
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
 }
+
+#stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+/*
+ * Full artwork layer.
+ */
 #photo {
-  position: absolute; left: 0; top: 0;
-  width: 100%; height: 100%;
-  object-fit: contain;
-  background: #000;
+    position: absolute;
+    left: 0;
+    top: 0;
+
+    width: 100%;
+    height: 100%;
+
+    object-fit: contain;
+
+    background: #000;
+
+    opacity: 1;
 }
+
+/*
+ * Two detail layers.
+ *
+ * The same pan_####.jpg is loaded into both.
+ * They alternate so that Left -> Center -> Right
+ * can cross-dissolve directly.
+ */
+.detail {
+    position: absolute;
+
+    left: 0;
+    top: 0;
+
+    height: 100%;
+    width: auto;
+
+    max-width: none;
+
+    background: #000;
+
+    opacity: 0;
+}
+
 </style>
-<script src="images.js?v=2"></script>
 </head>
+
+
 <body>
-<img id="photo" alt="">
+
+<div id="stage">
+
+    <img
+        id="photo"
+        alt=""
+    >
+
+    <img
+        id="detailA"
+        class="detail"
+        alt=""
+    >
+
+    <img
+        id="detailB"
+        class="detail"
+        alt=""
+    >
+
+</div>
+
+
+<script src="images.js?v=5"></script>
+
+
 <script>
+
 (function () {
-  var delay = 30000;  // 30 seconds
-  var order = [];
-  var pos = 0;
-  var img = document.getElementById("photo");
 
-  function shuffle() {
-    var i, j, t;
-    order = images.slice(0);
-    for (i = order.length - 1; i > 0; i--) {
-      j = Math.floor(Math.random() * (i + 1));
-      t = order[i]; order[i] = order[j]; order[j] = t;
+    /*
+     * ============================================================
+     * Timing
+     * ============================================================
+     */
+
+    /*
+     * Normal portrait / non-wide artwork.
+     */
+    var NORMAL_HOLD = 30000;
+
+
+    /*
+     * Wide artwork:
+     *
+     * Full artwork first.
+     */
+    var FULL_HOLD = 15000;
+
+
+    /*
+     * Cross-dissolve duration.
+     */
+    var DISSOLVE_TIME = 1500;
+
+
+    /*
+     * Hold time for each enlarged view:
+     *
+     * Left
+     * Center
+     * Right
+     */
+    var DETAIL_HOLD = 6000;
+
+
+    /*
+     * After Right, return to the complete artwork
+     * and hold it briefly before the next artwork.
+     */
+    var FINAL_FULL_HOLD = 5000;
+
+
+    /*
+     * ============================================================
+     * State
+     * ============================================================
+     */
+
+    var order = [];
+
+    var pos = 0;
+
+    var timerId = null;
+
+
+    var photo =
+        document.getElementById(
+            "photo"
+        );
+
+    var detailA =
+        document.getElementById(
+            "detailA"
+        );
+
+    var detailB =
+        document.getElementById(
+            "detailB"
+        );
+
+
+    /*
+     * ============================================================
+     * Timer helper
+     * ============================================================
+     */
+
+    function schedule(
+        fn,
+        delay
+    ) {
+
+        if (timerId !== null) {
+
+            clearTimeout(
+                timerId
+            );
+        }
+
+        timerId =
+            setTimeout(
+                fn,
+                delay
+            );
     }
-    pos = 0;
-  }
 
-  function next() {
-    if (!images || images.length === 0) return;
-    if (pos >= order.length) shuffle();
-    img.src = order[pos] + "?v=" + new Date().getTime();
-    pos++;
-  }
 
-  if (typeof images !== "undefined" && images.length > 0) {
-    shuffle();
-    next();
-    setInterval(next, delay);
-  }
+    /*
+     * ============================================================
+     * Shuffle
+     * ============================================================
+     */
+
+    function shuffle() {
+
+        order =
+            images.slice();
+
+        for (
+            var i = order.length - 1;
+            i > 0;
+            i--
+        ) {
+
+            var j =
+                Math.floor(
+                    Math.random() *
+                    (i + 1)
+                );
+
+            var temp =
+                order[i];
+
+            order[i] =
+                order[j];
+
+            order[j] =
+                temp;
+        }
+
+        pos = 0;
+    }
+
+
+    /*
+     * ============================================================
+     * Reset layers
+     * ============================================================
+     */
+
+    function resetLayers() {
+
+        photo.style.transition =
+            "none";
+
+        detailA.style.transition =
+            "none";
+
+        detailB.style.transition =
+            "none";
+
+
+        photo.style.opacity =
+            "0";
+
+        detailA.style.opacity =
+            "0";
+
+        detailB.style.opacity =
+            "0";
+
+
+        detailA.style.left =
+            "0px";
+
+        detailB.style.left =
+            "0px";
+    }
+
+
+    /*
+     * ============================================================
+     * Next artwork
+     * ============================================================
+     */
+
+    function next() {
+
+        if (
+            typeof images === "undefined" ||
+            !images ||
+            images.length === 0
+        ) {
+
+            return;
+        }
+
+
+        if (
+            pos >= order.length
+        ) {
+
+            shuffle();
+        }
+
+
+        var item =
+            order[pos];
+
+        pos++;
+
+
+        /*
+         * Prepare all layers.
+         */
+        resetLayers();
+
+
+        var cacheBust =
+            "?v=" +
+            new Date().getTime();
+
+
+        /*
+         * Load full artwork.
+         */
+        photo.src =
+            item.display +
+            cacheBust;
+
+
+        /*
+         * Wide artwork.
+         */
+        if (item.pan) {
+
+            /*
+             * Load the same wide detail image
+             * into both detail layers.
+             */
+            detailA.src =
+                item.pan +
+                cacheBust;
+
+            detailB.src =
+                item.pan +
+                cacheBust;
+
+
+            /*
+             * Show the full artwork.
+             */
+            photo.style.opacity =
+                "1";
+
+
+            playWideArtwork();
+
+
+        } else {
+
+            /*
+             * Normal artwork.
+             */
+            detailA.removeAttribute(
+                "src"
+            );
+
+            detailB.removeAttribute(
+                "src"
+            );
+
+
+            photo.style.opacity =
+                "1";
+
+
+            schedule(
+                function () {
+
+                    fadeNormalToNext();
+
+                },
+                NORMAL_HOLD
+            );
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * Normal artwork -> next artwork
+     * ============================================================
+     */
+
+    function fadeNormalToNext() {
+
+        photo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+        photo.style.opacity =
+            "0";
+
+
+        schedule(
+            next,
+            DISSOLVE_TIME
+        );
+    }
+
+
+    /*
+     * ============================================================
+     * Wide artwork sequence
+     *
+     * Full
+     *   ->
+     * Left
+     *   ->
+     * Center
+     *   ->
+     * Right
+     *   ->
+     * Full
+     *   ->
+     * Next
+     * ============================================================
+     */
+
+    function playWideArtwork() {
+
+        /*
+         * Hold complete artwork first.
+         */
+        schedule(
+            function () {
+
+                startDetailSequence();
+
+            },
+            FULL_HOLD
+        );
+    }
+
+
+    /*
+     * ============================================================
+     * Detail sequence
+     * ============================================================
+     */
+
+    function startDetailSequence() {
+
+        var viewportWidth =
+            window.innerWidth;
+
+
+        /*
+         * Both detail layers contain
+         * the same image and have the
+         * same displayed width.
+         */
+        var imageWidth =
+            detailA.offsetWidth;
+
+
+        var distance =
+            Math.max(
+                0,
+                imageWidth -
+                viewportWidth
+            );
+
+
+        /*
+         * Safety fallback.
+         */
+        if (
+            distance <= 0
+        ) {
+
+            schedule(
+                next,
+                500
+            );
+
+            return;
+        }
+
+
+        /*
+         * Left / Center / Right positions.
+         */
+        var leftPosition =
+            0;
+
+        var centerPosition =
+            -(distance / 2);
+
+        var rightPosition =
+            -distance;
+
+
+        /*
+         * --------------------------------------------------------
+         * FULL -> LEFT
+         * --------------------------------------------------------
+         */
+
+        detailA.style.transition =
+            "none";
+
+        detailA.style.left =
+            leftPosition +
+            "px";
+
+        detailA.style.opacity =
+            "0";
+
+
+        /*
+         * Force layout before starting dissolve.
+         */
+        detailA.offsetWidth;
+
+
+        photo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+        detailA.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+
+        photo.style.opacity =
+            "0";
+
+        detailA.style.opacity =
+            "1";
+
+
+        /*
+         * Hold Left.
+         */
+        schedule(
+            function () {
+
+                dissolveLeftToCenter();
+
+            },
+            DISSOLVE_TIME +
+            DETAIL_HOLD
+        );
+
+
+        /*
+         * --------------------------------------------------------
+         * LEFT -> CENTER
+         * --------------------------------------------------------
+         */
+
+        function dissolveLeftToCenter() {
+
+            /*
+             * Prepare Center invisibly
+             * on detailB.
+             */
+            detailB.style.transition =
+                "none";
+
+            detailB.style.left =
+                centerPosition +
+                "px";
+
+            detailB.style.opacity =
+                "0";
+
+
+            detailB.offsetWidth;
+
+
+            /*
+             * Cross-dissolve:
+             *
+             * A = Left
+             * B = Center
+             */
+            detailA.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+            detailB.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+
+            detailA.style.opacity =
+                "0";
+
+            detailB.style.opacity =
+                "1";
+
+
+            /*
+             * Hold Center.
+             */
+            schedule(
+                function () {
+
+                    dissolveCenterToRight();
+
+                },
+                DISSOLVE_TIME +
+                DETAIL_HOLD
+            );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * CENTER -> RIGHT
+         * --------------------------------------------------------
+         */
+
+        function dissolveCenterToRight() {
+
+            /*
+             * detailA is now invisible.
+             *
+             * Reuse it for Right.
+             */
+            detailA.style.transition =
+                "none";
+
+            detailA.style.left =
+                rightPosition +
+                "px";
+
+            detailA.style.opacity =
+                "0";
+
+
+            detailA.offsetWidth;
+
+
+            /*
+             * Cross-dissolve:
+             *
+             * B = Center
+             * A = Right
+             */
+            detailB.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+            detailA.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+
+            detailB.style.opacity =
+                "0";
+
+            detailA.style.opacity =
+                "1";
+
+
+            /*
+             * Hold Right.
+             */
+            schedule(
+                function () {
+
+                    dissolveRightToFull();
+
+                },
+                DISSOLVE_TIME +
+                DETAIL_HOLD
+            );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * RIGHT -> FULL
+         * --------------------------------------------------------
+         */
+
+        function dissolveRightToFull() {
+
+            /*
+             * Full artwork has remained loaded
+             * in the photo layer.
+             */
+            photo.style.transition =
+                "none";
+
+            photo.style.opacity =
+                "0";
+
+
+            photo.offsetWidth;
+
+
+            /*
+             * Cross-dissolve:
+             *
+             * detailA = Right
+             * photo   = Full
+             */
+            detailA.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+            photo.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+
+            detailA.style.opacity =
+                "0";
+
+            photo.style.opacity =
+                "1";
+
+
+            /*
+             * Hold the complete artwork again.
+             */
+            schedule(
+                function () {
+
+                    finishWideArtwork();
+
+                },
+                DISSOLVE_TIME +
+                FINAL_FULL_HOLD
+            );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * FINAL FULL -> NEXT
+         * --------------------------------------------------------
+         */
+
+        function finishWideArtwork() {
+
+            /*
+             * Fade the complete artwork out
+             * before loading the next artwork.
+             *
+             * This avoids an abrupt jump.
+             */
+            photo.style.transition =
+                "opacity " +
+                DISSOLVE_TIME +
+                "ms linear";
+
+            photo.style.opacity =
+                "0";
+
+
+            schedule(
+                next,
+                DISSOLVE_TIME
+            );
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * Start gallery
+     * ============================================================
+     */
+
+    if (
+        typeof images !== "undefined" &&
+        images &&
+        images.length > 0
+    ) {
+
+        shuffle();
+
+        next();
+    }
+
 })();
+
 </script>
+
 </body>
 </html>
