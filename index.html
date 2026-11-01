@@ -42,7 +42,7 @@ body {
 
     background: #000;
 
-    opacity: 1;
+    opacity: 0;
 }
 
 /*
@@ -96,7 +96,7 @@ body {
 </div>
 
 
-<script src="images.js?v=5"></script>
+<script src="images.js?v=6"></script>
 
 
 <script>
@@ -308,6 +308,9 @@ body {
 
         /*
          * Prepare all layers.
+         *
+         * Keep everything invisible while
+         * the next full artwork is loading.
          */
         resetLayers();
 
@@ -318,22 +321,86 @@ body {
 
 
         /*
-         * Load full artwork.
+         * --------------------------------------------------------
+         * IMPORTANT FOR OLD ANDROID WEBVIEW
+         * --------------------------------------------------------
+         *
+         * Do not make the photo layer visible immediately
+         * after changing photo.src.
+         *
+         * Old Android WebView may briefly repaint the
+         * previous bitmap before the new image has finished
+         * decoding.
+         *
+         * The new artwork becomes visible only after
+         * its onload event fires.
          */
-        photo.src =
-            item.display +
-            cacheBust;
+
+        photo.onload =
+            function () {
+
+                /*
+                 * Remove this handler immediately.
+                 */
+                photo.onload =
+                    null;
+
+
+                /*
+                 * Make sure the new bitmap has been
+                 * committed while the layer is still
+                 * invisible.
+                 */
+                photo.style.transition =
+                    "none";
+
+                photo.style.opacity =
+                    "0";
+
+
+                photo.offsetWidth;
+
+
+                /*
+                 * Now show the newly loaded artwork.
+                 */
+                photo.style.opacity =
+                    "1";
+
+
+                /*
+                 * Wide artwork.
+                 */
+                if (item.pan) {
+
+                    playWideArtwork();
+
+                } else {
+
+                    /*
+                     * Normal artwork.
+                     */
+                    schedule(
+                        function () {
+
+                            fadeNormalToNext();
+
+                        },
+                        NORMAL_HOLD
+                    );
+                }
+            };
 
 
         /*
-         * Wide artwork.
+         * Wide artwork:
+         *
+         * Preload the same detail image into
+         * both detail layers while the full
+         * artwork is loading / being displayed.
          */
         if (item.pan) {
 
-            /*
-             * Load the same wide detail image
-             * into both detail layers.
-             */
             detailA.src =
                 item.pan +
                 cacheBust;
@@ -342,22 +409,8 @@ body {
                 item.pan +
                 cacheBust;
 
-
-            /*
-             * Show the full artwork.
-             */
-            photo.style.opacity =
-                "1";
-
-
-            playWideArtwork();
-
-
         } else {
 
-            /*
-             * Normal artwork.
-             */
             detailA.removeAttribute(
                 "src"
             );
@@ -365,21 +418,19 @@ body {
             detailB.removeAttribute(
                 "src"
             );
-
-
-            photo.style.opacity =
-                "1";
-
-
-            schedule(
-                function () {
-
-                    fadeNormalToNext();
-
-                },
-                NORMAL_HOLD
-            );
         }
+
+
+        /*
+         * Set the new full-artwork source LAST.
+         *
+         * The photo layer remains invisible until
+         * photo.onload above confirms that the new
+         * bitmap is ready.
+         */
+        photo.src =
+            item.display +
+            cacheBust;
     }
 
 
@@ -757,8 +808,6 @@ body {
             /*
              * Fade the complete artwork out
              * before loading the next artwork.
-             *
-             * This avoids an abrupt jump.
              */
             photo.style.transition =
                 "opacity " +
