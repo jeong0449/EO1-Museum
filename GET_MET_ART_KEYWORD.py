@@ -18,11 +18,18 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "3.9"
-EDITION = "CLI + Artist Filter + Diagnostic Edition"
-BUILD_DATE = "2026-10-29"
+VERSION = "4.0"
+EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
+BUILD_DATE = "2026-11-01"
 
 # Version history
+#
+# v4.0
+#   - Added Artist Nationality to general metadata search.
+#   - Added --year YEAR or START-END.
+#   - Added --region for broad geographic/cultural filtering.
+#   - Added --medium, --culture, and --tag filters.
+#   - Added --highlight for Met Highlight objects only.
 #
 # v3.9
 #   - Added --artist filter.
@@ -101,10 +108,13 @@ SEARCH_FIELDS = (
     "Title",
     "Artist Display Name",
     "Artist Display Bio",
+    "Artist Nationality",
     "Object Name",
     "Classification",
     "Medium",
     "Culture",
+    "Country",
+    "Region",
     "Period",
     "Dynasty",
     "Reign",
@@ -114,6 +124,131 @@ SEARCH_FIELDS = (
     "Tags",
 )
 
+# ============================================================
+# Broad region filters
+# ============================================================
+
+REGION_FILTERS = {
+    "asia": (
+        "asia",
+        "asian",
+        "china",
+        "chinese",
+        "japan",
+        "japanese",
+        "korea",
+        "korean",
+        "india",
+        "indian",
+        "tibet",
+        "tibetan",
+        "nepal",
+        "nepalese",
+        "thailand",
+        "thai",
+        "vietnam",
+        "vietnamese",
+        "cambodia",
+        "cambodian",
+        "indonesia",
+        "indonesian",
+        "mongolia",
+        "mongolian",
+    ),
+
+    "europe": (
+        "europe",
+        "european",
+        "france",
+        "french",
+        "italy",
+        "italian",
+        "germany",
+        "german",
+        "britain",
+        "british",
+        "england",
+        "english",
+        "spain",
+        "spanish",
+        "portugal",
+        "portuguese",
+        "netherlands",
+        "dutch",
+        "belgium",
+        "belgian",
+        "austria",
+        "austrian",
+        "switzerland",
+        "swiss",
+        "greece",
+        "greek",
+        "rome",
+        "roman",
+        "russia",
+        "russian",
+        "poland",
+        "polish",
+    ),
+
+    "africa": (
+        "africa",
+        "african",
+        "egypt",
+        "egyptian",
+        "ethiopia",
+        "ethiopian",
+        "nigeria",
+        "nigerian",
+        "ghana",
+        "kenya",
+        "congo",
+        "morocco",
+        "moroccan",
+        "tunisia",
+        "tunisian",
+        "algeria",
+        "algerian",
+        "south africa",
+    ),
+
+    "americas": (
+        "america",
+        "american",
+        "united states",
+        "canada",
+        "canadian",
+        "mexico",
+        "mexican",
+        "brazil",
+        "brazilian",
+        "argentina",
+        "argentine",
+        "peru",
+        "peruvian",
+        "chile",
+        "chilean",
+        "colombia",
+        "colombian",
+        "caribbean",
+    ),
+
+    "oceania": (
+        "oceania",
+        "oceanic",
+        "australia",
+        "australian",
+        "new zealand",
+        "maori",
+        "polynesia",
+        "polynesian",
+        "melanesia",
+        "melanesian",
+        "micronesia",
+        "micronesian",
+        "papua new guinea",
+    ),
+}
 
 # ============================================================
 # Object filters
@@ -388,7 +523,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             SCRIPT_NAME
-            + " - download Open Access artwork "
+            + " - discover, curate, and download Open Access artwork "
             + "from The Metropolitan Museum of Art."
         )
     )
@@ -489,6 +624,53 @@ def build_parser():
             "spaces=AND, commas=OR"
         ),
     )
+    
+    parser.add_argument(
+        "--year",
+        help=(
+            "year or year range, "
+            "e.g. 1888 or 1600-1750"
+        ),
+    )
+
+    parser.add_argument(
+        "--region",
+        choices=list(REGION_FILTERS.keys()),
+        help=(
+            "broad geographic/cultural region: "
+            "asia, europe, africa, americas, oceania"
+        ),
+    )
+
+    parser.add_argument(
+        "--medium",
+        help=(
+            "filter by Medium metadata; "
+            "commas mean OR, e.g. oil,tempera"
+        ),
+    )
+
+    parser.add_argument(
+        "--culture",
+        help=(
+            "filter by Culture metadata; "
+            "commas mean OR, e.g. japanese,chinese"
+        ),
+    )
+
+    parser.add_argument(
+        "--tag",
+        help=(
+            "filter by Tags metadata; "
+            "commas mean OR, e.g. flowers,birds"
+        ),
+    )
+
+    parser.add_argument(
+        "--highlight",
+        action="store_true",
+        help="select Met Highlight objects only",
+    )
 
     parser.add_argument(
         "--target",
@@ -586,24 +768,15 @@ def is_painting(row):
             "Classification",
             ""
         )
-        .strip()
-        .casefold()
-    )
+        or ""
+    ).strip().casefold()
 
-    object_name = (
-        row.get(
-            "Object Name",
-            ""
-        )
-        .strip()
-        .casefold()
-    )
+    parts = [
+        part.strip()
+        for part in classification.split("|")
+    ]
 
-    return (
-        "paint" in classification
-        or
-        "paint" in object_name
-    )
+    return "paintings" in parts
 
 
 def is_public_domain(row):
@@ -619,6 +792,199 @@ def is_public_domain(row):
 
     return value == "true"
 
+def parse_year_filter(value):
+
+    if not value:
+        return None
+
+    value = value.strip()
+
+    try:
+
+        if "-" in value:
+
+            start, end = value.split("-", 1)
+
+            start = int(start.strip())
+            end = int(end.strip())
+
+            if start > end:
+                start, end = end, start
+
+            return start, end
+
+        year = int(value)
+
+        return year, year
+
+    except ValueError:
+
+        raise ValueError(
+            "Year must be YYYY or START-END"
+        )
+
+
+def row_year_range(row):
+
+    try:
+
+        start = int(
+            (
+                row.get(
+                    "Object Begin Date",
+                    ""
+                )
+                or ""
+            ).strip()
+        )
+
+        end = int(
+            (
+                row.get(
+                    "Object End Date",
+                    ""
+                )
+                or ""
+            ).strip()
+        )
+
+        return start, end
+
+    except ValueError:
+
+        return None
+
+
+def matches_year(row, year_range):
+
+    if year_range is None:
+        return True
+
+    object_range = row_year_range(row)
+
+    if object_range is None:
+        return False
+
+    object_start, object_end = object_range
+    wanted_start, wanted_end = year_range
+
+    # Any overlap with the requested period counts.
+    return (
+        object_end >= wanted_start
+        and object_start <= wanted_end
+    )
+ 
+def region_filter_text(row):
+
+    fields = (
+        "Culture",
+        "Country",
+        "Region",
+        "Department",
+        "Artist Nationality",
+    )
+
+    return " ".join(
+        row.get(field, "") or ""
+        for field in fields
+    ).casefold()
+
+
+def matches_region(row, region):
+
+    if not region:
+        return True
+
+    terms = REGION_FILTERS.get(
+        region,
+        ()
+    )
+
+    haystack = region_filter_text(row)
+
+    return any(
+        term.casefold() in haystack
+        for term in terms
+    )
+    
+def matches_medium(row, medium):
+
+    if not medium:
+        return True
+
+    text = (
+        row.get(
+            "Medium",
+            ""
+        )
+        or ""
+    ).casefold()
+
+    terms = [
+        term.strip().casefold()
+        for term in medium.split(",")
+        if term.strip()
+    ]
+
+    return any(
+        term in text
+        for term in terms
+    )
+
+def matches_culture(row, culture):
+    if not culture:
+        return True
+
+    text = (
+        row.get(
+            "Culture",
+            ""
+        )
+        or ""
+    ).casefold()
+
+    terms = [
+        term.strip().casefold()
+        for term in culture.split(",")
+        if term.strip()
+    ]
+
+    return any(
+        term in text
+        for term in terms
+    )
+
+def matches_tag(row, tag):
+    if not tag:
+        return True
+
+    text = (
+        row.get(
+            "Tags",
+            ""
+        )
+        or ""
+    ).casefold()
+
+    terms = [
+        term.strip().casefold()
+        for term in tag.split(",")
+        if term.strip()
+    ]
+
+    return any(
+        term in text
+        for term in terms
+    )
+
+def is_highlight(row):
+    return (
+        row.get(
+            "Is Highlight",
+            ""
+        )
+        or ""
+    ).strip().casefold() == "true"
 
 # ============================================================
 # Artist filter
@@ -1815,9 +2181,14 @@ def choose_candidates(
     artists=None,
     paintings_only=True,
     subject_terms=None,
-    object_terms=None
+    object_terms=None,
+    year_range=None,
+    region=None,
+    medium=None,
+    culture=None,
+    tag=None,
+    highlight_only=False
 ):
-
     artists = artists or []
     subject_terms = subject_terms or []
     object_terms = object_terms or []
@@ -1872,6 +2243,42 @@ def choose_candidates(
             if not matches_subject_filter(
                 row,
                 subject_terms
+            ):
+                continue
+
+            if not matches_year(
+                row,
+                year_range
+            ):
+                continue
+
+            if not matches_region(
+                row,
+                region
+            ):
+                continue
+
+            if not matches_medium(
+                row,
+                medium
+            ):
+                continue
+
+            if not matches_culture(
+                row,
+                culture
+            ):
+                continue
+
+            if not matches_tag(
+                row,
+                tag
+            ):
+                continue
+
+            if (
+                highlight_only
+                and not is_highlight(row)
             ):
                 continue
 
@@ -2384,6 +2791,12 @@ def build_download_command(
     color_only,
     artist,
     query,
+    year,
+    region,
+    medium,
+    culture,
+    tag,
+    highlight_only,
     target
 ):
 
@@ -2429,6 +2842,43 @@ def build_download_command(
             command_quote(query),
         ])
 
+    if year:
+
+        parts.extend([
+            "--year",
+            command_quote(year),
+        ])
+
+    if region:
+
+        parts.extend([
+            "--region",
+            region,
+        ])
+
+    if medium:
+
+        parts.extend([
+            "--medium",
+            command_quote(medium),
+        ])
+
+    if culture:
+
+        parts.extend([
+            "--culture",
+            command_quote(culture),
+        ])
+
+    if tag:
+        parts.extend([
+            "--tag",
+            command_quote(tag),
+        ])
+
+    if highlight_only:
+        parts.append("--highlight")
+
     parts.extend([
         "--target",
         str(target),
@@ -2449,6 +2899,12 @@ def show_dry_run(
     color_only,
     artist,
     query,
+    year,
+    region,
+    medium,
+    culture,
+    tag,
+    highlight_only,
     target,
     match_count
 ):
@@ -2517,6 +2973,48 @@ def show_dry_run(
         target
     )
 
+    print(
+        "Year            :",
+        year
+        if year
+        else "(any)"
+    )
+
+    print(
+        "Region          :",
+        region
+        if region
+        else "(any)"
+    )
+
+    print(
+        "Medium          :",
+        medium
+        if medium
+        else "(any)"
+    )
+    
+    print(
+        "Culture         :",
+        culture
+        if culture
+        else "(any)"
+    )
+
+    print(
+        "Tag             :",
+        tag
+        if tag
+        else "(any)"
+    )
+
+    print(
+        "Highlight       :",
+        "Yes"
+        if highlight_only
+        else "No"
+    )
+    
     print()
 
     print(
@@ -2536,11 +3034,11 @@ def show_dry_run(
 
         print()
         print(
-            "NOTE: Color filtering was NOT evaluated."
+            "NOTE: Color-only mode is enabled, but actual image color"
         )
 
         print(
-            "It requires downloading the actual images."
+            "cannot be evaluated in dry-run mode because images are not downloaded."
         )
 
     print()
@@ -2556,6 +3054,12 @@ def show_dry_run(
         color_only,
         artist,
         query,
+        year,
+        region,
+        medium,
+        culture,
+        tag,
+        highlight_only,
         target
     )
 
@@ -2725,6 +3229,18 @@ def main():
         query
     )
 
+    try:
+
+        year_range = parse_year_filter(
+            args.year
+        )
+
+    except ValueError as e:
+
+        parser.error(
+            str(e)
+        )
+
     target = (
         args.target
         if args.target is not None
@@ -2745,7 +3261,13 @@ def main():
             artists,
             paintings_only,
             subject_terms,
-            object_terms
+            object_terms,
+            year_range,
+            args.region,
+            args.medium,
+            args.culture,
+            args.tag,
+            args.highlight
         )
     )
 
@@ -2759,6 +3281,12 @@ def main():
             color_only,
             artist,
             query,
+            args.year,
+            args.region,
+            args.medium,
+            args.culture,
+            args.tag,
+            args.highlight,
             target,
             match_count
         )
