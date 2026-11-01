@@ -20,65 +20,26 @@ The project began with The Metropolitan Museum of Art collection and is designed
   <em>Claude Monet, The Apple Tree (Le Pommier), 1879. Museum Barberini, Potsdam (Hasso Plattner Collection).</em>
 </p>
 
-## Architecture: From Browser-Based Revival to Native EO1-Museum
+## How It Works
 
-EO1-Museum originally began as a **browser-based revival** of the Electric Objects EO1. The first working version used a PC to prepare and serve a web gallery, while the EO1 displayed that gallery through Firefox.
+EO1-Museum uses a PC for artwork discovery, curation, and gallery preparation. The prepared collection can either be viewed directly through **PC Gallery** or transferred over Wi-Fi using **Safe Sync** for independent playback from the EO1's internal storage.
 
-The original workflow was:
+    PC
+     │
+     ├── PC Gallery ──────────────► EO1
+     │
+     └── Safe Sync ───────────────► EO1
+                                      │
+                                Local Gallery
+                                      │
+                                      ▼
+                             standalone playback
 
-```text
-Open-access museum collections
-        ↓
-Download and curate artworks on a PC
-        ↓
-Generate a local web gallery
-        ↓
-Serve the gallery over Wi-Fi
-        ↓
-Electric Objects EO1
-        ↓
-MetBoot launches Firefox automatically
-        ↓
-Firefox opens the local gallery
-        ↓
-Museum artworks are displayed on the EO1
-```
+Once synchronized, Local Gallery does not require the PC or a network connection for normal playback.
 
-Artwork collection, selection, image processing, and web serving were handled by a PC on the same local network. **Firefox 68.11.0** served as the gallery runtime on the EO1, while **MetBoot** automatically launched Firefox after Android booted. This provided the first stable, unattended EO1-Museum display without depending on the original Electric Objects service.
+Artwork files can also be copied directly to the EO1's internal storage using ADB for development or manual maintenance.
 
-This browser-based architecture was later superseded by the native **EO1-Museum Android application**. The native application became the EO1's HOME application and introduced an independent **Local Gallery** using internal storage. The former PC-hosted gallery was then incorporated into the native application as **PC Gallery** through an embedded WebView.
-
-Beginning with v0.4, **Safe Sync** connected these two modes by allowing exhibitions prepared on the PC to be transferred directly to the EO1 over Wi-Fi.
-
-The current architecture is therefore:
-
-```text
-                 PC
-                  │
-        discovery / curation
-                  │
-           make_gallery.py
-                  │
-              display/
-                  │
-             server.py
-                  │
-        ┌─────────┴─────────┐
-        │                   │
-   PC Gallery           Safe Sync
-   (WebView)                │
-        │                   ▼
-        │          EO1 internal storage
-        │                   │
-        └────────────► Local Gallery
-                            │
-                            ▼
-                    independent playback
-```
-
-Once an exhibition has been synchronized, **Local Gallery does not require the PC or the network for normal playback**. The PC handles artwork discovery, curation, preparation, and synchronization; the EO1 primarily serves as the display device.
-
-The complete development path—from the original browser-only experiment through Firefox and MetBoot, native Android development, ADBApprovalHelper, Local Gallery, PC Gallery, and Safe Sync—is documented in [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
+For the evolution from the original Firefox/MetBoot-based system to the current native application, see [Development History](docs/DEVELOPMENT_HISTORY.md).
 
 ## Installation
 
