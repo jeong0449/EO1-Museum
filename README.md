@@ -155,4 +155,7 @@ In particular, the native EO1 Museum application was developed by modifying and 
 
 For detailed discussion of these earlier projects and their influence on EO1-Museum, see [Inspiration and Prior Work](docs/PRIOR_WORK.md). The evolution of EO1-Museum itself is documented separately in [EO1-Museum Development History](docs/DEVELOPMENT_HISTORY.md).
 
+## Documentation
+
+- [Roadmap](docs/ROADMAP.md) — planned improvements and future directions
 
