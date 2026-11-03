@@ -1,12 +1,12 @@
 # EO1-Museum
 
-> **Current version — EO1-Museum v0.42**
+> **Current version — EO1-Museum v0.43**
 
 EO1-Museum brings the discontinued [Electric Objects EO1](https://www.kickstarter.com/projects/electricobjects/electric-objects-a-computer-made-for-art) back to life as a standalone digital art display for **curated open-access artworks and generative art**.
 
 The project combines a lightweight native Android application on the EO1 with PC-side tools for discovering, curating, preparing, and synchronizing artwork. Once transferred to the EO1, collections can be displayed independently without a PC or network connection.
 
-Artwork discovery currently draws on **The Metropolitan Museum of Art** and **Wikimedia Commons**, while generative artworks created with HTML and JavaScript are rendered as video for playback on the EO1.
+Artwork discovery currently draws on **The Metropolitan Museum of Art** and **Wikimedia Commons**, while generative artworks created with HTML and JavaScript are rendered as video for playback on the EO1. Wide landscape artworks can also be prepared as horizontal pan videos, making better use of the EO1's distinctive portrait display.
 
 <p align="center">
   <img src="images/sample_2.jpg" width="350" alt="Claude Monet, The Apple Tree (Le Pommier), displayed on the EO1">
@@ -18,20 +18,27 @@ Artwork discovery currently draws on **The Metropolitan Museum of Art** and **Wi
 
 ## How It Works
 
-EO1-Museum uses a PC for artwork discovery, curation, and gallery preparation. The prepared collection can either be viewed directly through **PC Gallery** or transferred over Wi-Fi using **Safe Sync** for independent playback from the EO1's internal storage.
+EO1-Museum uses a PC for artwork discovery, curation, gallery preparation, and computationally intensive media processing. The prepared collection can either be viewed directly through **PC Gallery** or transferred over Wi-Fi using **Safe Sync** for independent playback from the EO1's internal storage.
 
-    PC
-     │
-     ├── PC Gallery ──────────────► EO1
-     │
-     └── Safe Sync ───────────────► EO1
-                                      │
-                                Local Gallery
-                                      │
-                                      ▼
-                             standalone playback
+```text
+PC
+ │
+ ├── artwork discovery and curation
+ ├── image preparation
+ ├── wide-artwork pan video generation
+ └── generative-art rendering
+ │
+ ├── PC Gallery ──────────────► EO1
+ │
+ └── Safe Sync ───────────────► EO1
+                                  │
+                             Local Gallery
+                                  │
+                                  ▼
+                          standalone playback
+```
 
-Once synchronized, Local Gallery does not require the PC or a network connection for normal playback.
+Safe Sync transfers not only ordinary artwork images but also companion media, such as pre-rendered pan videos for wide artworks. Once synchronized, Local Gallery does not require the PC or a network connection for normal playback.
 
 Artwork files can also be copied directly to the EO1's internal storage using ADB for development or manual maintenance.
 
@@ -45,7 +52,7 @@ The guide provides two installation and maintenance paths:
 
 1. **Network installation and normal operation** — the intended path for ordinary use. The native EO1-Museum APK is installed without relying on Firefox or MetBoot, and exhibitions are subsequently transferred through PC Gallery and Safe Sync.
 
-2. **ADB installation and maintenance** — for users who want to install or update the APK directly over USB, transfer media with `adb push`, inspect the EO1 filesystem, troubleshoot the application, or perform development work. `ADBApprovalHelper` is documented as part of this path.
+2. **ADB installation and maintenance** — for users who want to install or update the APK directly over USB or wireless ADB, transfer media with `adb push`, inspect the EO1 filesystem, troubleshoot the application, or perform development work. `ADBApprovalHelper` is documented as part of this path.
 
 > **Important:** The simplified network installation procedure was reconstructed retrospectively from the development history and the author's current working EO1. It has **not yet been tested from beginning to end on a fresh or factory-reset EO1**. See [INSTALL.md](INSTALL.md) for the full warning and installation details.
 
@@ -54,7 +61,6 @@ Firefox and MetBoot are **not required for normal operation of the current nativ
 ### Legacy Browser-Based Installation
 
 The earlier Firefox + MetBoot workflow is preserved in the [Legacy Installation Guide](legacy/INSTALL_LEGACY.md) for historical reference and reproducibility.
-
 
 ## Artwork and Collections
 
@@ -66,11 +72,44 @@ Artwork discovery and curation are handled on the PC using **Python tools includ
 
 Selected artworks are downloaded and prepared on the PC for the EO1's 1080 × 1920 portrait display. The resulting collection can then be viewed through PC Gallery or transferred to the EO1 for independent playback in Local Gallery.
 
+Wide landscape artworks receive special treatment. On a portrait display, simply fitting an entire wide painting to the screen can reduce it to a narrow strip. EO1-Museum can therefore generate a **pre-rendered horizontal pan video** on the PC. The complete artwork is shown first, followed by an enlarged pan across its details, and then the complete view returns.
+
+```text
+Wide artwork
+    ↓
+Full view
+    ↓
+Horizontal detail pan
+    ↓
+Full view
+```
+
+The pan video is treated as companion media belonging to the artwork rather than as a separate gallery item. It can be played through PC Gallery, transferred together with its base artwork through **Safe Sync**, and played back in the offline Local Gallery using Android's native video playback.
+
+If a pan video is unavailable, a static presentation can instead show left, center, and right detail views before returning to the complete artwork.
+
 For search commands, filtering, caching, and curation workflows, see [Search Examples](SEARCH_EXAMPLES.md).
 
 ### Generative Art
 
-EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render these animations smoothly in real time, the works are rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
+EO1-Museum also supports **generative art** created with HTML5 Canvas and JavaScript. Because the EO1's original hardware is not powerful enough to render complex animations smoothly in real time, the works can be rendered on a PC as portrait-format MP4 video and played back by the native EO1-Museum application.
+
+This follows the same architecture used for wide-artwork pan videos:
+
+```text
+PC
+    -> discover
+    -> curate
+    -> prepare
+    -> render
+
+EO1
+    -> store
+    -> decode
+    -> display
+```
+
+Rather than forcing the aging EO1 hardware to perform work better suited to a modern computer, EO1-Museum performs computationally intensive preparation on the PC and lets the EO1 concentrate on what its hardware still does remarkably well — **displaying art**.
 
 The artworks, interactive browser versions, and a brief description of the rendering workflow are available in the [Generative Art Gallery](https://jeong0449.github.io/EO1-Museum/art/).
 
@@ -92,4 +131,3 @@ For detailed discussion of these earlier projects and their influence on EO1-Mus
 - [Inspiration and Prior Work](docs/PRIOR_WORK.md) — earlier EO1 revival projects
 - [Roadmap](docs/ROADMAP.md) — planned improvements and future directions
 - [Legacy Installation Guide](legacy/INSTALL_LEGACY.md) — Firefox/MetBoot-based installation
-
