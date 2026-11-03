@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,6 +46,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -168,6 +172,14 @@ public class MainActivity extends Activity {
     // True only while a Network Gallery MP4 is being played
     // by the native VideoView on behalf of index.html.
     private boolean networkVideoActive = false;
+
+    // Local Gallery companion-pan state.
+    private boolean localPanVideoActive = false;
+    private File currentLocalBaseFile = null;
+    private static final long LOCAL_FULL_HOLD = 15000L;
+    private static final long LOCAL_DETAIL_HOLD = 6000L;
+    private static final long LOCAL_FINAL_FULL_HOLD = 5000L;
+    private static final long LOCAL_DISSOLVE_TIME = 1500L;
 
     private final Runnable networkTimeoutRunnable =
             new Runnable() {
@@ -1072,15 +1084,17 @@ public class MainActivity extends Activity {
             showSyncMessage("Syncing...", 0L);
 
             String js = downloadText(baseUrl + "images.js");
-            List<String> paths = parseImagePaths(js);
+            List<String> allDisplayPaths = parseAllDisplayPaths(js);
+            List<String> artworkPaths = parseArtworkPaths(allDisplayPaths);
+            Set<String> availablePaths = new HashSet<String>(allDisplayPaths);
 
-            if (paths.isEmpty()) {
-                writeLog("Safe Sync: images.js contains no display images");
+            if (artworkPaths.isEmpty()) {
+                writeLog("Safe Sync: images.js contains no base artwork images");
                 showSyncMessage("Sync stopped: no images", 4000L);
                 return;
             }
 
-            int limit = Math.min(paths.size(), maxMediaFiles);
+            int artworkLimit = Math.min(artworkPaths.size(), maxMediaFiles);
             File mediaDir = new File(MEDIA_DIR);
             if (!mediaDir.exists() && !mediaDir.mkdirs()) {
                 writeLog("Safe Sync: cannot create " + MEDIA_DIR);
@@ -1088,13 +1102,12 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            int completed = 0;
+            int completedArtworks = 0;
+            int completedFiles = 0;
             boolean stoppedForSpace = false;
-            for (int i = 0; i < limit; i++) {
-                String relativePath = paths.get(i);
-                String fileName = new File(relativePath).getName();
 
-                if (fileName.length() == 0) continue;
+            for (int i = 0; i < artworkLimit; i++) {
+                String basePath = artworkPaths.get(i);
 
                 if (!hasReserveSpace(mediaDir, 0)) {
                     writeLog("Safe Sync stopped: MIN_FREE_MB=" + minFreeMb);
@@ -1102,41 +1115,136 @@ public class MainActivity extends Activity {
                     break;
                 }
 
-                showSyncMessage("Syncing... " + (i + 1) + " / " + limit, 0L);
+                showSyncMessage("Syncing... " + (i + 1) + " / " + artworkLimit, 0L);
 
-                File target = new File(mediaDir, fileName);
-                File temp = new File(mediaDir, fileName + ".tmp");
-
-                if (downloadFileSafely(
-                        baseUrl + relativePath,
-                        temp,
-                        target,
-                        mediaDir)) {
-                    completed++;
-                    writeLog("Safe Sync: " + fileName +
-                            " (" + completed + "/" + limit + ")");
-                } else {
-                    writeLog("Safe Sync failed: " + relativePath);
+                boolean baseOk = syncOneFile(baseUrl, basePath, mediaDir);
+                if (!baseOk) {
+                    writeLog("Safe Sync failed base artwork: " + basePath);
+                    continue;
                 }
+                completedFiles++;
+
+                String panJpgPath = makePanJpgPath(basePath);
+                if (availablePaths.contains(panJpgPath)) {
+                    if (syncOneFile(baseUrl, panJpgPath, mediaDir)) {
+                        completedFiles++;
+                    } else {
+                        writeLog("Safe Sync optional pan JPG failed: " + panJpgPath);
+                    }
+
+                    String panMp4Path = replaceExtension(panJpgPath, ".mp4");
+                    if (remoteFileExists(baseUrl + panMp4Path)) {
+                        if (syncOneFile(baseUrl, panMp4Path, mediaDir)) {
+                            completedFiles++;
+                        } else {
+                            writeLog("Safe Sync optional pan MP4 failed: " + panMp4Path);
+                        }
+                    } else {
+                        writeLog("Safe Sync: no pan MP4 companion for " + basePath);
+                    }
+                }
+
+                completedArtworks++;
+                writeLog("Safe Sync artwork complete: " + (i + 1) + "/" + artworkLimit +
+                        " files=" + completedFiles);
             }
 
-            writeLog("Safe Sync complete: " + completed +
-                    "/" + limit + " files");
+            writeLog("Safe Sync complete: artworks=" + completedArtworks +
+                    "/" + artworkLimit + " files=" + completedFiles);
 
             if (stoppedForSpace) {
                 showSyncMessage("Sync stopped: free space limit (" +
-                        completed + " / " + limit + ")", 6000L);
-            } else if (completed == limit) {
-                showSyncMessage("Sync complete: " + completed + " images", 4000L);
+                        completedArtworks + " / " + artworkLimit + ")", 6000L);
+            } else if (completedArtworks == artworkLimit) {
+                showSyncMessage("Sync complete: " + completedArtworks +
+                        " artworks", 4000L);
             } else {
-                showSyncMessage("Sync finished: " + completed +
-                        " / " + limit, 5000L);
+                showSyncMessage("Sync finished: " + completedArtworks +
+                        " / " + artworkLimit, 5000L);
             }
 
         } catch (Exception e) {
             writeLog("Safe Sync error: " + e.getMessage());
             showSyncMessage("Sync error: " + e.getMessage(), 5000L);
         }
+    }
+
+    private boolean syncOneFile(String baseUrl, String relativePath, File mediaDir) {
+        String fileName = new File(relativePath).getName();
+        if (fileName.length() == 0) return false;
+
+        File target = new File(mediaDir, fileName);
+        File temp = new File(mediaDir, fileName + ".tmp");
+
+        boolean ok = downloadFileSafely(
+                baseUrl + relativePath,
+                temp,
+                target,
+                mediaDir);
+
+        if (ok) {
+            writeLog("Safe Sync file: " + fileName);
+        } else {
+            writeLog("Safe Sync failed: " + relativePath);
+        }
+        return ok;
+    }
+
+    private boolean remoteFileExists(String urlString) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(urlString).openConnection();
+            connection.setConnectTimeout(connectTimeoutSec * 1000);
+            connection.setReadTimeout(connectTimeoutSec * 1000);
+            connection.setUseCaches(false);
+            connection.setRequestMethod("HEAD");
+            connection.connect();
+            return connection.getResponseCode() == HttpURLConnection.HTTP_OK;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private List<String> parseAllDisplayPaths(String js) {
+        List<String> result = new ArrayList<String>();
+        Set<String> seen = new HashSet<String>();
+        Pattern pattern = Pattern.compile("[\\\"'](display/[^\\\"']+)[\\\"']");
+        Matcher matcher = pattern.matcher(js);
+        while (matcher.find()) {
+            String path = matcher.group(1).replace("\\\\", "/");
+            if (!path.contains("..") && seen.add(path)) {
+                result.add(path);
+            }
+        }
+        return result;
+    }
+
+    private List<String> parseArtworkPaths(List<String> allPaths) {
+        List<String> result = new ArrayList<String>();
+        for (String path : allPaths) {
+            String name = new File(path).getName().toLowerCase(Locale.US);
+            if (name.startsWith("pan_")) continue;
+            if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")) {
+                result.add(path);
+                if (result.size() >= maxMediaFiles) break;
+            }
+        }
+        return result;
+    }
+
+    private String makePanJpgPath(String basePath) {
+        int slash = basePath.lastIndexOf('/');
+        String dir = slash >= 0 ? basePath.substring(0, slash + 1) : "";
+        String name = slash >= 0 ? basePath.substring(slash + 1) : basePath;
+        return dir + "pan_" + replaceExtension(name, ".jpg");
+    }
+
+    private String replaceExtension(String path, String newExtension) {
+        int dot = path.lastIndexOf('.');
+        if (dot < 0) return path + newExtension;
+        return path.substring(0, dot) + newExtension;
     }
 
     private void showSyncMessage(final String message, final long hideAfterMs) {
@@ -1195,17 +1303,6 @@ public class MainActivity extends Activity {
             if (reader != null) try { reader.close(); } catch (Exception ignored) {}
             if (connection != null) connection.disconnect();
         }
-    }
-
-    private List<String> parseImagePaths(String js) {
-        List<String> result = new ArrayList<String>();
-        Pattern pattern = Pattern.compile("[\\\"'](display/[^\\\"']+)[\\\"']");
-        Matcher matcher = pattern.matcher(js);
-        while (matcher.find() && result.size() < maxMediaFiles) {
-            String path = matcher.group(1).replace("\\\\", "/");
-            if (!path.contains("..")) result.add(path);
-        }
-        return result;
     }
 
     private boolean downloadFileSafely(
@@ -1328,6 +1425,8 @@ public class MainActivity extends Activity {
 
                         if (currentMode == MODE_NETWORK && networkVideoActive) {
                             finishNetworkVideo(false);
+                        } else if (currentMode == MODE_LOCAL && localPanVideoActive) {
+                            finishLocalPanVideo(false);
                         } else if (currentMode == MODE_ART) {
                             showNextArt();
                         } else {
@@ -1348,6 +1447,8 @@ public class MainActivity extends Activity {
 
                     if (currentMode == MODE_NETWORK && networkVideoActive) {
                         finishNetworkVideo(true);
+                    } else if (currentMode == MODE_LOCAL && localPanVideoActive) {
+                        finishLocalPanVideo(true);
                     } else if (currentMode == MODE_ART) {
                         showNextArt();
                     } else {
@@ -1385,6 +1486,11 @@ public class MainActivity extends Activity {
 
                                         finishNetworkVideo(false);
 
+                                    } else if (currentMode == MODE_LOCAL &&
+                                            localPanVideoActive) {
+
+                                        finishLocalPanVideo(false);
+
                                     } else if (currentMode == MODE_ART) {
 
                                         showNextArt();
@@ -1415,6 +1521,8 @@ public class MainActivity extends Activity {
 
         currentMode = MODE_LOCAL;
         networkVideoActive = false;
+        localPanVideoActive = false;
+        currentLocalBaseFile = null;
 
         networkHandler.removeCallbacks(
                 networkTimeoutRunnable
@@ -1492,313 +1600,322 @@ public class MainActivity extends Activity {
 
         mediaFiles.clear();
 
-        File dir =
-                new File(MEDIA_DIR);
-
-        if (!dir.exists() ||
-                !dir.isDirectory()) {
-
-            writeLog(
-                    "Media directory not found: " +
-                            MEDIA_DIR
-            );
-
+        File dir = new File(MEDIA_DIR);
+        if (!dir.exists() || !dir.isDirectory()) {
+            writeLog("Media directory not found: " + MEDIA_DIR);
             return;
         }
 
-        File[] files =
-                dir.listFiles();
-
+        File[] files = dir.listFiles();
         if (files == null) {
-
-            writeLog(
-                    "Media directory listFiles() " +
-                            "returned null"
-            );
-
+            writeLog("Media directory listFiles() returned null");
             return;
         }
 
         for (File file : files) {
+            if (!file.isFile()) continue;
 
-            if (!file.isFile()) {
-                continue;
-            }
+            String name = file.getName().toLowerCase(Locale.US);
 
-            String name =
-                    file.getName()
-                            .toLowerCase(
-                                    Locale.US
-                            );
+            // Local Gallery is artwork-based.  Companion pan JPG/MP4 files
+            // belong to the base artwork and must never become shuffled items.
+            if (name.startsWith("pan_")) continue;
 
             if (name.endsWith(".jpg") ||
                     name.endsWith(".jpeg") ||
-                    name.endsWith(".png") ||
-                    name.endsWith(".mp4")) {
-
+                    name.endsWith(".png")) {
                 mediaFiles.add(file);
             }
         }
 
-        Collections.shuffle(
-                mediaFiles
-        );
-
-        writeLog(
-                "Media files found=" +
-                        mediaFiles.size()
-        );
+        Collections.shuffle(mediaFiles);
+        writeLog("Local artworks found=" + mediaFiles.size());
     }
 
     private void showNextMedia() {
 
-        if (currentMode != MODE_LOCAL) {
-            return;
-        }
+        if (currentMode != MODE_LOCAL) return;
 
-        handler.removeCallbacks(
-                nextImageRunnable
-        );
-
+        handler.removeCallbacks(nextImageRunnable);
+        localPanVideoActive = false;
         hideProgress();
 
         if (mediaFiles.isEmpty()) {
-
-            writeLog(
-                    "showNextMedia: " +
-                            "media list empty"
-            );
-
+            writeLog("showNextMedia: media list empty");
             loadMediaList();
-
-            if (mediaFiles.isEmpty()) {
-                return;
-            }
+            if (mediaFiles.isEmpty()) return;
         }
 
         mediaIndex++;
-
-        if (mediaIndex >=
-                mediaFiles.size()) {
-
-            Collections.shuffle(
-                    mediaFiles
-            );
-
+        if (mediaIndex >= mediaFiles.size()) {
+            Collections.shuffle(mediaFiles);
             mediaIndex = 0;
-
-            writeLog(
-                    "Media list reshuffled"
-            );
+            writeLog("Media list reshuffled");
         }
 
-        File file =
-                mediaFiles.get(
-                        mediaIndex
-                );
-
-        writeLog(
-                "Showing media: " +
-                        file.getName()
-        );
-
-        String name =
-                file.getName()
-                        .toLowerCase(
-                                Locale.US
-                        );
-
-        if (name.endsWith(".mp4")) {
-
-            showVideo(file);
-
-        } else {
-
-            showImage(file);
-        }
+        currentLocalBaseFile = mediaFiles.get(mediaIndex);
+        writeLog("Showing local artwork: " + currentLocalBaseFile.getName());
+        showLocalFullImage(currentLocalBaseFile, LOCAL_FULL_HOLD, true);
     }
 
-    private void showImage(
-            File file) {
+    private void showLocalFullImage(final File file,
+                                    long holdMs,
+                                    final boolean startCompanionAfterHold) {
+
+        if (currentMode != MODE_LOCAL) return;
 
         hideProgress();
+        handler.removeCallbacks(nextImageRunnable);
 
-        try {
+        try { videoView.stopPlayback(); } catch (Exception ignored) {}
+        videoView.setVisibility(View.GONE);
+        webView.setVisibility(View.GONE);
 
-            videoView.stopPlayback();
+        final ImageView oldView = firstImageActive ? imageView : imageViewNext;
+        final ImageView newView = firstImageActive ? imageViewNext : imageView;
 
-        } catch (Exception ignored) {
-        }
-
-        videoView.setVisibility(
-                View.GONE
-        );
-
-        webView.setVisibility(
-                View.GONE
-        );
-
-        handler.removeCallbacks(
-                nextImageRunnable
-        );
-
-        /*
-         * First image after entering
-         * Local Gallery:
-         * display immediately.
-         */
         if (!hasCurrentImage) {
-
             imageView.animate().cancel();
-
-            imageViewNext.animate()
-                    .cancel();
-
+            imageViewNext.animate().cancel();
+            imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            imageView.setImageMatrix(new Matrix());
             imageView.setImageURI(null);
-
-            imageView.setImageURI(
-                    Uri.fromFile(file)
-            );
-
+            imageView.setImageURI(Uri.fromFile(file));
             imageView.setAlpha(1f);
-
-            imageView.setVisibility(
-                    View.VISIBLE
-            );
-
+            imageView.setVisibility(View.VISIBLE);
             imageViewNext.setAlpha(0f);
-
-            imageViewNext.setVisibility(
-                    View.INVISIBLE
-            );
-
+            imageViewNext.setVisibility(View.INVISIBLE);
             firstImageActive = true;
             hasCurrentImage = true;
-
         } else {
-
-            final ImageView oldView =
-                    firstImageActive
-                            ? imageView
-                            : imageViewNext;
-
-            final ImageView newView =
-                    firstImageActive
-                            ? imageViewNext
-                            : imageView;
-
             oldView.animate().cancel();
-
             newView.animate().cancel();
-
+            newView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            newView.setImageMatrix(new Matrix());
             newView.setImageURI(null);
-
-            newView.setImageURI(
-                    Uri.fromFile(file)
-            );
-
+            newView.setImageURI(Uri.fromFile(file));
             newView.setAlpha(0f);
-
-            newView.setVisibility(
-                    View.VISIBLE
-            );
-
-            oldView.setVisibility(
-                    View.VISIBLE
-            );
-
+            newView.setVisibility(View.VISIBLE);
+            oldView.setVisibility(View.VISIBLE);
             oldView.setAlpha(1f);
 
-            newView.animate()
-                    .alpha(1f)
-                    .setDuration(
-                            CROSSFADE_DURATION
-                    )
-                    .start();
+            newView.animate().alpha(1f).setDuration(LOCAL_DISSOLVE_TIME).start();
+            oldView.animate().alpha(0f).setDuration(LOCAL_DISSOLVE_TIME)
+                    .withEndAction(new Runnable() {
+                        @Override
+                        public void run() {
+                            oldView.setVisibility(View.INVISIBLE);
+                        }
+                    }).start();
 
-            oldView.animate()
-                    .alpha(0f)
-                    .setDuration(
-                            CROSSFADE_DURATION
-                    )
-                    .withEndAction(
-                            new Runnable() {
-
-                                @Override
-                                public void run() {
-
-                                    oldView.setVisibility(
-                                            View.INVISIBLE
-                                    );
-                                }
-                            }
-                    )
-                    .start();
-
-            firstImageActive =
-                    !firstImageActive;
+            firstImageActive = !firstImageActive;
         }
 
-        handler.postDelayed(
-                nextImageRunnable,
-                imageInterval
-        );
-
-        writeLog(
-                "Image timer scheduled: " +
-                        imageInterval +
-                        " ms"
-        );
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (currentMode != MODE_LOCAL) return;
+                if (startCompanionAfterHold) {
+                    startLocalCompanion();
+                } else {
+                    showNextMedia();
+                }
+            }
+        }, holdMs);
     }
 
-    private void showVideo(
-            File file) {
+    private void startLocalCompanion() {
 
-        handler.removeCallbacks(
-                nextImageRunnable
-        );
+        if (currentMode != MODE_LOCAL || currentLocalBaseFile == null) return;
 
-        imageView.animate().cancel();
-        imageViewNext.animate().cancel();
+        File panJpg = getLocalPanJpg(currentLocalBaseFile);
+        File panMp4 = getLocalPanMp4(currentLocalBaseFile);
 
-        imageView.setVisibility(
-                View.GONE
-        );
+        if (panMp4.exists() && panMp4.isFile()) {
+            startLocalPanVideo(panMp4);
+        } else if (panJpg.exists() && panJpg.isFile()) {
+            writeLog("Local pan MP4 missing; using static fallback: " + panJpg.getName());
+            startLocalStaticPan(panJpg);
+        } else {
+            writeLog("No local pan companion: " + currentLocalBaseFile.getName());
+            showNextMedia();
+        }
+    }
 
-        imageViewNext.setVisibility(
-                View.GONE
-        );
+    private File getLocalPanJpg(File baseFile) {
+        String panName = "pan_" + replaceExtension(baseFile.getName(), ".jpg");
+        return new File(baseFile.getParentFile(), panName);
+    }
 
+    private File getLocalPanMp4(File baseFile) {
+        String panName = "pan_" + replaceExtension(baseFile.getName(), ".mp4");
+        return new File(baseFile.getParentFile(), panName);
+    }
+
+    private void startLocalPanVideo(File panMp4) {
+
+        if (currentMode != MODE_LOCAL) return;
+
+        writeLog("Local native pan video: " + panMp4.getName());
+        localPanVideoActive = true;
+        handler.removeCallbacks(nextImageRunnable);
+
+        imageView.setVisibility(View.GONE);
+        imageViewNext.setVisibility(View.GONE);
         hasCurrentImage = false;
         firstImageActive = true;
 
-        videoView.setVisibility(
-                View.VISIBLE
-        );
-
+        videoView.setVisibility(View.VISIBLE);
+        videoView.bringToFront();
         showProgress();
 
         try {
-
             videoView.stopPlayback();
-
-            videoView.setVideoURI(
-                    Uri.fromFile(file)
-            );
-
+            videoView.setVideoURI(Uri.fromFile(panMp4));
             videoView.requestFocus();
-
         } catch (Exception e) {
-
-            writeLog(
-                    "showVideo exception: " +
-                            e.getMessage()
-            );
-
-            hideProgress();
-
-            showNextMedia();
+            writeLog("Local pan video exception: " + e.getMessage());
+            finishLocalPanVideo(false);
         }
+
+        if (clockVisible && clockView != null) clockView.bringToFront();
+    }
+
+    private void finishLocalPanVideo(boolean success) {
+
+        if (!localPanVideoActive) return;
+
+        writeLog("Local pan video finished success=" + success);
+        localPanVideoActive = false;
+        hideProgress();
+
+        try { videoView.stopPlayback(); } catch (Exception ignored) {}
+        videoView.setVisibility(View.GONE);
+
+        if (currentMode != MODE_LOCAL || currentLocalBaseFile == null) return;
+
+        if (success) {
+            hasCurrentImage = false;
+            firstImageActive = true;
+            showLocalFullImage(currentLocalBaseFile, LOCAL_FINAL_FULL_HOLD, false);
+        } else {
+            File panJpg = getLocalPanJpg(currentLocalBaseFile);
+            if (panJpg.exists() && panJpg.isFile()) {
+                startLocalStaticPan(panJpg);
+            } else {
+                showNextMedia();
+            }
+        }
+    }
+
+    private void startLocalStaticPan(final File panJpg) {
+        writeLog("Local static pan fallback: " + panJpg.getName());
+        showLocalDetail(panJpg, 0, new Runnable() {
+            @Override
+            public void run() {
+                showLocalDetail(panJpg, 1, new Runnable() {
+                    @Override
+                    public void run() {
+                        showLocalDetail(panJpg, 2, new Runnable() {
+                            @Override
+                            public void run() {
+                                if (currentLocalBaseFile != null) {
+                                    showLocalFullImage(currentLocalBaseFile,
+                                            LOCAL_FINAL_FULL_HOLD, false);
+                                } else {
+                                    showNextMedia();
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    // position: 0=left, 1=center, 2=right
+    private void showLocalDetail(final File panJpg,
+                                 final int position,
+                                 final Runnable next) {
+
+        if (currentMode != MODE_LOCAL) return;
+
+        final ImageView oldView = firstImageActive ? imageView : imageViewNext;
+        final ImageView newView = firstImageActive ? imageViewNext : imageView;
+
+        oldView.animate().cancel();
+        newView.animate().cancel();
+
+        newView.setImageURI(null);
+        newView.setScaleType(ImageView.ScaleType.MATRIX);
+        newView.setImageURI(Uri.fromFile(panJpg));
+        applyWideImagePosition(newView, position);
+        newView.setAlpha(0f);
+        newView.setVisibility(View.VISIBLE);
+
+        oldView.setVisibility(View.VISIBLE);
+        oldView.setAlpha(1f);
+
+        newView.animate().alpha(1f).setDuration(LOCAL_DISSOLVE_TIME).start();
+        oldView.animate().alpha(0f).setDuration(LOCAL_DISSOLVE_TIME)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        oldView.setVisibility(View.INVISIBLE);
+                    }
+                }).start();
+
+        firstImageActive = !firstImageActive;
+        hasCurrentImage = true;
+
+        writeLog("Local static pan position=" + position + " file=" + panJpg.getName());
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (currentMode == MODE_LOCAL && next != null) next.run();
+            }
+        }, LOCAL_DETAIL_HOLD);
+    }
+
+    private void applyWideImagePosition(final ImageView view, final int position) {
+        view.post(new Runnable() {
+            @Override
+            public void run() {
+                Drawable drawable = view.getDrawable();
+                if (drawable == null) return;
+
+                float imageW = drawable.getIntrinsicWidth();
+                float imageH = drawable.getIntrinsicHeight();
+                float viewW = view.getWidth();
+                float viewH = view.getHeight();
+
+                if (imageW <= 0 || imageH <= 0 || viewW <= 0 || viewH <= 0) return;
+
+                // Fill the portrait screen vertically.  A wide source therefore
+                // extends beyond the left/right edges and can be positioned at
+                // the three intended detail views.
+                float scale = Math.max(viewW / imageW, viewH / imageH);
+                float scaledW = imageW * scale;
+                float scaledH = imageH * scale;
+
+                float tx;
+                if (position <= 0) {
+                    tx = 0f;
+                } else if (position >= 2) {
+                    tx = viewW - scaledW;
+                } else {
+                    tx = (viewW - scaledW) / 2f;
+                }
+
+                float ty = (viewH - scaledH) / 2f;
+
+                Matrix matrix = new Matrix();
+                matrix.setScale(scale, scale);
+                matrix.postTranslate(tx, ty);
+                view.setImageMatrix(matrix);
+            }
+        });
     }
 
     // ------------------------------------------------------------
