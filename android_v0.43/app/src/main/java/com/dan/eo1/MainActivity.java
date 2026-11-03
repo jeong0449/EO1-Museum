@@ -13,6 +13,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
@@ -163,6 +164,10 @@ public class MainActivity extends Activity {
 
     private boolean networkErrorDialogVisible =
             false;
+
+    // True only while a Network Gallery MP4 is being played
+    // by the native VideoView on behalf of index.html.
+    private boolean networkVideoActive = false;
 
     private final Runnable networkTimeoutRunnable =
             new Runnable() {
@@ -795,6 +800,17 @@ public class MainActivity extends Activity {
         webView.getSettings()
                 .setJavaScriptEnabled(true);
 
+        webView.getSettings()
+                .setMediaPlaybackRequiresUserGesture(false);
+
+        // Network Gallery JavaScript bridge.  index.html can call
+        // EO1.playNetworkVideo(url) on the EO1.  Desktop browsers do not
+        // have this object and continue to use ordinary HTML5 <video>.
+        webView.addJavascriptInterface(
+                new NetworkGalleryBridge(),
+                "EO1"
+        );
+
         /*
          * Android 4.4 / API 19 compatible
          * WebViewClient.
@@ -869,6 +885,140 @@ public class MainActivity extends Activity {
                     }
                 }
         );
+    }
+
+    // ------------------------------------------------------------
+    // Network Gallery native MP4 bridge
+    // ------------------------------------------------------------
+
+    private class NetworkGalleryBridge {
+
+        @JavascriptInterface
+        public void playNetworkVideo(final String url) {
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    startNetworkVideo(url);
+                }
+            });
+        }
+    }
+
+    private void startNetworkVideo(String requestedUrl) {
+
+        if (currentMode != MODE_NETWORK) {
+            writeLog("Network video ignored outside Network Gallery");
+            return;
+        }
+
+        if (requestedUrl == null || requestedUrl.trim().length() == 0) {
+            writeLog("Network video rejected: empty URL");
+            notifyNetworkVideoFinished(false);
+            return;
+        }
+
+        String videoUrl = requestedUrl.trim();
+
+        // Accept either an absolute HTTP URL or a gallery-relative path.
+        if (!videoUrl.startsWith("http://") &&
+                !videoUrl.startsWith("https://")) {
+            while (videoUrl.startsWith("/")) {
+                videoUrl = videoUrl.substring(1);
+            }
+            videoUrl = getNetworkGalleryUrl() + videoUrl;
+        }
+
+        // This bridge is intentionally restricted to the configured gallery
+        // server.  Do not allow arbitrary pages to make the EO1 fetch video
+        // from another host.
+        if (!videoUrl.startsWith(getNetworkGalleryUrl())) {
+            writeLog("Network video rejected: outside gallery server: " + videoUrl);
+            notifyNetworkVideoFinished(false);
+            return;
+        }
+
+        writeLog("Network native video: " + videoUrl);
+
+        networkVideoActive = true;
+
+        handler.removeCallbacks(nextImageRunnable);
+
+        imageView.setVisibility(View.GONE);
+        imageViewNext.setVisibility(View.GONE);
+
+        // Keep the WebView alive and on the same page, but hide it while the
+        // native VideoView owns the screen.  JavaScript state is preserved.
+        webView.setVisibility(View.INVISIBLE);
+
+        videoView.setVisibility(View.VISIBLE);
+        videoView.bringToFront();
+
+        showProgress();
+
+        try {
+            videoView.stopPlayback();
+            videoView.setVideoURI(Uri.parse(videoUrl));
+            videoView.requestFocus();
+        } catch (Exception e) {
+            writeLog("Network video exception: " + e.getMessage());
+            finishNetworkVideo(false);
+        }
+
+        if (clockVisible && clockView != null) {
+            clockView.bringToFront();
+        }
+    }
+
+    private void finishNetworkVideo(boolean success) {
+
+        if (!networkVideoActive) {
+            return;
+        }
+
+        writeLog("Network native video finished success=" + success);
+
+        networkVideoActive = false;
+
+        hideProgress();
+
+        try {
+            videoView.stopPlayback();
+        } catch (Exception ignored) {
+        }
+
+        videoView.setVisibility(View.GONE);
+
+        if (currentMode == MODE_NETWORK) {
+            webView.setVisibility(View.VISIBLE);
+            webView.bringToFront();
+
+            if (clockVisible && clockView != null) {
+                clockView.bringToFront();
+            }
+
+            notifyNetworkVideoFinished(success);
+        }
+    }
+
+    private void notifyNetworkVideoFinished(boolean success) {
+
+        if (webView == null || currentMode != MODE_NETWORK) {
+            return;
+        }
+
+        final String script =
+                "javascript:if(window.eo1NativeVideoFinished){" +
+                        "window.eo1NativeVideoFinished(" +
+                        (success ? "true" : "false") +
+                        ");}";
+
+        webView.post(new Runnable() {
+            @Override
+            public void run() {
+                webView.loadUrl(script);
+            }
+        });
     }
 
     // ------------------------------------------------------------
@@ -1176,7 +1326,9 @@ public class MainActivity extends Activity {
 
                         hideProgress();
 
-                        if (currentMode == MODE_ART) {
+                        if (currentMode == MODE_NETWORK && networkVideoActive) {
+                            finishNetworkVideo(false);
+                        } else if (currentMode == MODE_ART) {
                             showNextArt();
                         } else {
                             showNextMedia();
@@ -1194,7 +1346,9 @@ public class MainActivity extends Activity {
 
                     hideProgress();
 
-                    if (currentMode == MODE_ART) {
+                    if (currentMode == MODE_NETWORK && networkVideoActive) {
+                        finishNetworkVideo(true);
+                    } else if (currentMode == MODE_ART) {
                         showNextArt();
                     } else {
                         showNextMedia();
@@ -1226,9 +1380,17 @@ public class MainActivity extends Activity {
                                 @Override
                                 public void run() {
 
-                                    if (currentMode == MODE_ART) {
+                                    if (currentMode == MODE_NETWORK &&
+                                            networkVideoActive) {
+
+                                        finishNetworkVideo(false);
+
+                                    } else if (currentMode == MODE_ART) {
+
                                         showNextArt();
+
                                     } else {
+
                                         showNextMedia();
                                     }
                                 }
@@ -1252,6 +1414,7 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_LOCAL;
+        networkVideoActive = false;
 
         networkHandler.removeCallbacks(
                 networkTimeoutRunnable
@@ -1647,6 +1810,7 @@ public class MainActivity extends Activity {
         writeLog("showArtMode");
 
         currentMode = MODE_ART;
+        networkVideoActive = false;
         currentArtFileName = null;
 
         handler.removeCallbacks(nextImageRunnable);
@@ -1774,6 +1938,7 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_NETWORK;
+        networkVideoActive = false;
 
         handler.removeCallbacks(
                 nextImageRunnable
