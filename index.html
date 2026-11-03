@@ -27,6 +27,7 @@ body {
     background: #000;
 }
 
+
 /*
  * Full artwork layer.
  */
@@ -44,6 +45,7 @@ body {
 
     opacity: 0;
 }
+
 
 /*
  * Two detail layers.
@@ -65,7 +67,30 @@ body {
     height: auto;
 
     max-width: none;
-    max-height: 1920px;
+    max-height: 100%;
+
+    background: #000;
+
+    opacity: 0;
+}
+
+
+/*
+ * Pre-rendered pan video.
+ *
+ * The MP4 itself is already rendered at
+ * 1080 x 1920 with a black background.
+ */
+#panVideo {
+    position: absolute;
+
+    left: 0;
+    top: 0;
+
+    width: 100%;
+    height: 100%;
+
+    object-fit: contain;
 
     background: #000;
 
@@ -96,6 +121,13 @@ body {
         class="detail"
         alt=""
     >
+
+    <video
+        id="panVideo"
+        muted
+        playsinline
+        preload="auto"
+    ></video>
 
 </div>
 
@@ -134,7 +166,7 @@ body {
 
 
     /*
-     * Hold time for each enlarged view:
+     * Hold time for each enlarged JPG view:
      *
      * Left
      * Center
@@ -144,8 +176,9 @@ body {
 
 
     /*
-     * After Right, return to the complete artwork
-     * and hold it briefly before the next artwork.
+     * After Right, or after MP4,
+     * return to the complete artwork
+     * and hold it briefly.
      */
     var FINAL_FULL_HOLD = 5000;
 
@@ -177,6 +210,20 @@ body {
         document.getElementById(
             "detailB"
         );
+
+    var panVideo =
+        document.getElementById(
+            "panVideo"
+        );
+
+
+    /*
+     * The current wide artwork.
+     *
+     * Used when MP4 probing fails and
+     * we need to fall back to JPG details.
+     */
+    var currentItem = null;
 
 
     /*
@@ -250,6 +297,16 @@ body {
 
     function resetLayers() {
 
+        if (timerId !== null) {
+
+            clearTimeout(
+                timerId
+            );
+
+            timerId = null;
+        }
+
+
         photo.style.transition =
             "none";
 
@@ -257,6 +314,9 @@ body {
             "none";
 
         detailB.style.transition =
+            "none";
+
+        panVideo.style.transition =
             "none";
 
 
@@ -267,6 +327,9 @@ body {
             "0";
 
         detailB.style.opacity =
+            "0";
+
+        panVideo.style.opacity =
             "0";
 
 
@@ -282,6 +345,74 @@ body {
 
         detailB.style.top =
             "0px";
+
+
+        /*
+         * Stop any video left over from
+         * the previous artwork.
+         */
+        try {
+
+            panVideo.pause();
+
+        } catch (e) {
+        }
+
+
+        panVideo.oncanplay =
+            null;
+
+        panVideo.onloadeddata =
+            null;
+
+        panVideo.onerror =
+            null;
+
+        panVideo.onended =
+            null;
+
+
+        panVideo.removeAttribute(
+            "src"
+        );
+
+        try {
+
+            panVideo.load();
+
+        } catch (e) {
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * Convert pan JPG path to MP4 path
+     * ============================================================
+     *
+     * Example:
+     *
+     * display/pan_0017.jpg
+     *
+     * becomes:
+     *
+     * display/pan_0017.mp4
+     */
+
+    function getPanVideoPath(
+        panPath
+    ) {
+
+        if (!panPath) {
+
+            return null;
+        }
+
+
+        return panPath.replace(
+            /\.[^.\/]+$/,
+            ".mp4"
+        );
     }
 
 
@@ -315,6 +446,10 @@ body {
             order[pos];
 
         pos++;
+
+
+        currentItem =
+            item;
 
 
         /*
@@ -384,7 +519,9 @@ body {
                  */
                 if (item.pan) {
 
-                    playWideArtwork();
+                    playWideArtwork(
+                        item
+                    );
 
                 } else {
 
@@ -407,8 +544,10 @@ body {
          * Wide artwork:
          *
          * Preload the same detail image into
-         * both detail layers while the full
-         * artwork is loading / being displayed.
+         * both detail layers.
+         *
+         * Even when an MP4 exists, the JPG is
+         * retained as a fallback.
          */
         if (item.pan) {
 
@@ -471,7 +610,405 @@ body {
 
     /*
      * ============================================================
-     * Wide artwork sequence
+     * Wide artwork
+     * ============================================================
+     *
+     * Full artwork is shown first.
+     *
+     * Then:
+     *
+     *     MP4 exists
+     *
+     *         Full
+     *           ->
+     *         MP4
+     *           ->
+     *         Full
+     *           ->
+     *         Next
+     *
+     *     MP4 unavailable
+     *
+     *         Full
+     *           ->
+     *         Left
+     *           ->
+     *         Center
+     *           ->
+     *         Right
+     *           ->
+     *         Full
+     *           ->
+     *         Next
+     */
+
+    function playWideArtwork(
+        item
+    ) {
+
+        schedule(
+            function () {
+
+                tryPanVideo(
+                    item
+                );
+
+            },
+            FULL_HOLD
+        );
+    }
+
+
+    /*
+     * ============================================================
+     * Try MP4
+     * ============================================================
+     *
+     * No manifest change is required.
+     *
+     * The video path is derived from item.pan.
+     *
+     * If the MP4 cannot be loaded,
+     * the existing JPG detail sequence is used.
+     */
+
+    function tryPanVideo(
+        item
+    ) {
+
+        var videoPath =
+            getPanVideoPath(
+                item.pan
+            );
+
+
+        if (!videoPath) {
+
+            startDetailSequence();
+
+            return;
+        }
+
+
+        var settled =
+            false;
+
+
+        /*
+         * --------------------------------------------------------
+         * MP4 success
+         * --------------------------------------------------------
+         */
+
+        function videoReady() {
+
+            if (settled) {
+
+                return;
+            }
+
+            settled = true;
+
+
+            panVideo.oncanplay =
+                null;
+
+            panVideo.onloadeddata =
+                null;
+
+            panVideo.onerror =
+                null;
+
+
+            startPanVideo();
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * MP4 unavailable
+         * --------------------------------------------------------
+         */
+
+        function videoFailed() {
+
+            if (settled) {
+
+                return;
+            }
+
+            settled = true;
+
+
+            panVideo.oncanplay =
+                null;
+
+            panVideo.onloadeddata =
+                null;
+
+            panVideo.onerror =
+                null;
+
+
+            try {
+
+                panVideo.pause();
+
+            } catch (e) {
+            }
+
+
+            panVideo.removeAttribute(
+                "src"
+            );
+
+
+            /*
+             * Use the existing static detail
+             * presentation instead.
+             */
+            startDetailSequence();
+        }
+
+
+        panVideo.oncanplay =
+            videoReady;
+
+        panVideo.onloadeddata =
+            videoReady;
+
+        panVideo.onerror =
+            videoFailed;
+
+
+        /*
+         * Do NOT add cache busting here.
+         *
+         * The MP4 is a static generated asset and
+         * allowing browser caching is desirable.
+         */
+        panVideo.src =
+            videoPath;
+
+
+        try {
+
+            panVideo.load();
+
+        } catch (e) {
+
+            videoFailed();
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * Start MP4 sequence
+     * ============================================================
+     */
+
+    function startPanVideo() {
+
+        /*
+         * Video starts invisibly.
+         */
+        panVideo.style.transition =
+            "none";
+
+        panVideo.style.opacity =
+            "0";
+
+
+        try {
+
+            panVideo.currentTime =
+                0;
+
+        } catch (e) {
+        }
+
+
+        panVideo.offsetWidth;
+
+
+        /*
+         * FULL -> VIDEO
+         */
+        photo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+        panVideo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+
+        photo.style.opacity =
+            "0";
+
+        panVideo.style.opacity =
+            "1";
+
+
+        /*
+         * When the MP4 reaches its end,
+         * return to the full artwork.
+         */
+        panVideo.onended =
+            function () {
+
+                panVideo.onended =
+                    null;
+
+                dissolveVideoToFull();
+            };
+
+
+        /*
+         * Start playback.
+         */
+        var playResult;
+
+        try {
+
+            playResult =
+                panVideo.play();
+
+        } catch (e) {
+
+            fallbackFromVideo();
+
+            return;
+        }
+
+
+        /*
+         * Modern browsers return a Promise.
+         *
+         * Old Android WebView may not.
+         */
+        if (
+            playResult &&
+            typeof playResult.catch === "function"
+        ) {
+
+            playResult.catch(
+                function () {
+
+                    fallbackFromVideo();
+                }
+            );
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * Video playback failure fallback
+     * ============================================================
+     */
+
+    function fallbackFromVideo() {
+
+        try {
+
+            panVideo.pause();
+
+        } catch (e) {
+        }
+
+
+        panVideo.onended =
+            null;
+
+
+        panVideo.style.transition =
+            "none";
+
+        panVideo.style.opacity =
+            "0";
+
+
+        /*
+         * Restore the full artwork before
+         * entering the JPG detail sequence.
+         */
+        photo.style.transition =
+            "none";
+
+        photo.style.opacity =
+            "1";
+
+
+        photo.offsetWidth;
+
+
+        startDetailSequence();
+    }
+
+
+    /*
+     * ============================================================
+     * VIDEO -> FULL
+     * ============================================================
+     */
+
+    function dissolveVideoToFull() {
+
+        /*
+         * Full artwork has remained loaded
+         * behind the video.
+         */
+        photo.style.transition =
+            "none";
+
+        photo.style.opacity =
+            "0";
+
+
+        photo.offsetWidth;
+
+
+        panVideo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+        photo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
+
+
+        panVideo.style.opacity =
+            "0";
+
+        photo.style.opacity =
+            "1";
+
+
+        /*
+         * Hold the complete artwork again.
+         */
+        schedule(
+            function () {
+
+                finishWideArtwork();
+
+            },
+            DISSOLVE_TIME +
+            FINAL_FULL_HOLD
+        );
+    }
+
+
+    /*
+     * ============================================================
+     * JPG Detail sequence
+     * ============================================================
      *
      * Full
      *   ->
@@ -484,29 +1021,6 @@ body {
      * Full
      *   ->
      * Next
-     * ============================================================
-     */
-
-    function playWideArtwork() {
-
-        /*
-         * Hold complete artwork first.
-         */
-        schedule(
-            function () {
-
-                startDetailSequence();
-
-            },
-            FULL_HOLD
-        );
-    }
-
-
-    /*
-     * ============================================================
-     * Detail sequence
-     * ============================================================
      */
 
     function startDetailSequence() {
@@ -579,7 +1093,7 @@ body {
         ) {
 
             schedule(
-                next,
+                finishWideArtwork,
                 500
             );
 
@@ -847,34 +1361,35 @@ body {
                 FINAL_FULL_HOLD
             );
         }
+    }
 
 
-        /*
-         * --------------------------------------------------------
-         * FINAL FULL -> NEXT
-         * --------------------------------------------------------
-         */
+    /*
+     * ============================================================
+     * FINAL FULL -> NEXT
+     * ============================================================
+     *
+     * Shared by both:
+     *
+     *     MP4 sequence
+     *     JPG detail sequence
+     */
 
-        function finishWideArtwork() {
+    function finishWideArtwork() {
 
-            /*
-             * Fade the complete artwork out
-             * before loading the next artwork.
-             */
-            photo.style.transition =
-                "opacity " +
-                DISSOLVE_TIME +
-                "ms linear";
+        photo.style.transition =
+            "opacity " +
+            DISSOLVE_TIME +
+            "ms linear";
 
-            photo.style.opacity =
-                "0";
+        photo.style.opacity =
+            "0";
 
 
-            schedule(
-                next,
-                DISSOLVE_TIME
-            );
-        }
+        schedule(
+            next,
+            DISSOLVE_TIME
+        );
     }
 
 
