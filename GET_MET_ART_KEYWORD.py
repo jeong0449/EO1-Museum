@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+import shlex
 import argparse
 import csv
 import json
@@ -18,11 +19,17 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "4.0"
+VERSION = "4.1"
 EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
-BUILD_DATE = "2026-11-01"
+BUILD_DATE = "2026-11-04"
 
 # Version history
+#
+# v4.1
+#   - Dry-run exports all matching CSV records to filtered.csv with timestamp and command.
+#   - Added --filter to sample from an exported CSV without searching MetObjects.csv.
+#   - Increased reservoir candidate pool from 600 to 1000.
+#   - Preserved existing collection, API, image, and curation workflows.
 #
 # v4.0
 #   - Added Artist Nationality to general metadata search.
@@ -76,6 +83,7 @@ BUILD_DATE = "2026-11-01"
 ROOT = Path(__file__).resolve().parent
 
 CSVFILE = ROOT / "MetObjects.csv"
+FILTERED_CSV = ROOT / "filtered.csv"
 ORIGINAL = ROOT / "original"
 META = ROOT / "met_metadata.json"
 ARCHIVE = ROOT / "archive"
@@ -91,7 +99,7 @@ OBJECT_API = (
 )
 
 DEFAULT_TARGET = 100
-CANDIDATE_POOL = 600
+CANDIDATE_POOL = 1000
 TIMEOUT = 45
 
 UA = "Mozilla/5.0 EO1-Met-Gallery/" + VERSION
@@ -689,6 +697,13 @@ def build_parser():
             "search/count only; "
             "do not modify or download artwork"
         ),
+    )
+
+    parser.add_argument(
+        "--filter",
+        metavar="CSV",
+        type=Path,
+        help="sample candidates from a previously exported filtered CSV",
     )
 
     return parser
@@ -2176,6 +2191,77 @@ def get_subject_info(choices):
 # Candidate selection
 # ============================================================
 
+def iter_csv_records(path):
+    """Read original or exported CSV; ignore leading # comment lines."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        def non_comment_lines():
+            for line in f:
+                if not line.startswith("#"):
+                    yield line
+        reader = csv.DictReader(non_comment_lines())
+        if not reader.fieldnames or "Object ID" not in reader.fieldnames:
+            raise ValueError("CSV has no valid Met Objects header: %s" % path)
+        yield from reader
+
+
+def export_filtered_csv(groups, artists=None, paintings_only=True,
+                        subject_terms=None, object_terms=None, year_range=None,
+                        region=None, medium=None, culture=None, tag=None,
+                        highlight_only=False):
+    """Stream all matching original rows, retaining the original CSV columns."""
+    artists = artists or []
+    subject_terms = subject_terms or []
+    object_terms = object_terms or []
+    count = 0
+    # Write to a temporary file first so a failed search does not destroy an old export.
+    temporary = FILTERED_CSV.with_name(FILTERED_CSV.name + ".tmp")
+    try:
+        with open(CSVFILE, "r", encoding="utf-8-sig", newline="") as source, \
+                open(temporary, "w", encoding="utf-8", newline="") as dest:
+            reader = csv.DictReader(source)
+            if not reader.fieldnames or "Object ID" not in reader.fieldnames:
+                raise ValueError("MetObjects.csv has no valid header")
+            dest.write("# Generated: %s\n" % datetime.now().astimezone().isoformat(timespec="seconds"))
+            dest.write("# Command: %s\n" % shlex.join(sys.argv))
+            writer = csv.DictWriter(dest, fieldnames=reader.fieldnames)
+            writer.writeheader()
+            for row in reader:
+                if not matches_metadata(row, groups, artists, paintings_only,
+                                        subject_terms, object_terms, year_range,
+                                        region, medium, culture, tag, highlight_only):
+                    continue
+                oid = (row.get("Object ID") or "").strip()
+                if not oid.isdigit():
+                    continue
+                writer.writerow(row)
+                count += 1
+        temporary.replace(FILTERED_CSV)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    print("Matching eligible %s records: %d" % (
+        "painting" if paintings_only else "object", count))
+    print("Saved all matching records to:", FILTERED_CSV)
+    return count
+
+
+def matches_metadata(row, groups, artists, paintings_only, subject_terms,
+                     object_terms, year_range, region, medium, culture,
+                     tag, highlight_only):
+    return (is_public_domain(row)
+            and (not paintings_only or is_painting(row))
+            and matches_artist(row, artists)
+            and matches_query(row, groups)
+            and matches_object_filter(row, object_terms)
+            and matches_subject_filter(row, subject_terms)
+            and matches_year(row, year_range)
+            and matches_region(row, region)
+            and matches_medium(row, medium)
+            and matches_culture(row, culture)
+            and matches_tag(row, tag)
+            and (not highlight_only or is_highlight(row)))
+
+
 def choose_candidates(
     groups,
     artists=None,
@@ -2187,172 +2273,56 @@ def choose_candidates(
     medium=None,
     culture=None,
     tag=None,
-    highlight_only=False
+    highlight_only=False,
+    source_csv=None
 ):
     artists = artists or []
     subject_terms = subject_terms or []
     object_terms = object_terms or []
-
     reservoir = []
     seen = 0
-
     print()
-    print(
-        "Searching Met metadata..."
-    )
+    print("Sampling filtered CSV..." if source_csv else "Searching Met metadata...")
+    for row in iter_csv_records(source_csv or CSVFILE):
+        if source_csv is None and not matches_metadata(
+                row, groups, artists, paintings_only, subject_terms,
+                object_terms, year_range, region, medium, culture,
+                tag, highlight_only):
+            continue
+        oid = (row.get("Object ID") or "").strip()
+        if not oid.isdigit():
+            continue
+        seen += 1
+        item = {
+            "objectID": int(oid),
+            "title": row.get(
+                "Title",
+                ""
+            ),
+            "artist": row.get(
+                "Artist Display Name",
+                ""
+            ),
+            "date": row.get(
+                "Object Date",
+                ""
+            ),
+            "objectURL": row.get(
+                "Link Resource",
+                ""
+            ),
+        }
 
-    with open(
-        CSVFILE,
-        "r",
-        encoding="utf-8-sig",
-        newline=""
-    ) as f:
+        if len(reservoir) < CANDIDATE_POOL:
+            reservoir.append(item)
+        else:
+            j = random.randrange(seen)
+            if j < CANDIDATE_POOL:
+                reservoir[j] = item
 
-        reader = csv.DictReader(f)
-
-        for row in reader:
-
-            if not is_public_domain(row):
-                continue
-
-            if (
-                paintings_only
-                and
-                not is_painting(row)
-            ):
-                continue
-
-            if not matches_artist(
-                row,
-                artists
-            ):
-                continue
-
-            if not matches_query(
-                row,
-                groups
-            ):
-                continue
-
-            if not matches_object_filter(
-                row,
-                object_terms
-            ):
-                continue
-
-            if not matches_subject_filter(
-                row,
-                subject_terms
-            ):
-                continue
-
-            if not matches_year(
-                row,
-                year_range
-            ):
-                continue
-
-            if not matches_region(
-                row,
-                region
-            ):
-                continue
-
-            if not matches_medium(
-                row,
-                medium
-            ):
-                continue
-
-            if not matches_culture(
-                row,
-                culture
-            ):
-                continue
-
-            if not matches_tag(
-                row,
-                tag
-            ):
-                continue
-
-            if (
-                highlight_only
-                and not is_highlight(row)
-            ):
-                continue
-
-            oid = (
-                row.get(
-                    "Object ID",
-                    ""
-                ).strip()
-            )
-
-            if not oid.isdigit():
-                continue
-
-            seen += 1
-
-            item = {
-                "objectID": int(oid),
-                "title": row.get(
-                    "Title",
-                    ""
-                ),
-                "artist": row.get(
-                    "Artist Display Name",
-                    ""
-                ),
-                "date": row.get(
-                    "Object Date",
-                    ""
-                ),
-                "objectURL": row.get(
-                    "Link Resource",
-                    ""
-                ),
-            }
-
-            if (
-                len(reservoir)
-                < CANDIDATE_POOL
-            ):
-
-                reservoir.append(
-                    item
-                )
-
-            else:
-
-                j = random.randrange(
-                    seen
-                )
-
-                if (
-                    j
-                    < CANDIDATE_POOL
-                ):
-                    reservoir[j] = item
-
-    random.shuffle(
-        reservoir
-    )
-
-    label = (
-        "painting"
-        if paintings_only
-        else "object"
-    )
-
-    print(
-        "Matching eligible %s records: %d"
-        % (
-            label,
-            seen
-        )
-    )
-
+    random.shuffle(reservoir)
+    print("Matching eligible %s records: %d" % (
+        "filtered" if source_csv else ("painting" if paintings_only else "object"), seen))
     return reservoir, seen
 
 
@@ -3081,6 +3051,9 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.filter is not None and args.dry_run:
+        parser.error("--filter and --dry-run cannot be used together")
+
     # Diagnostic mode has priority over normal operation.
 
     if args.diagnose is not None:
@@ -3128,170 +3101,190 @@ def main():
         "=========================================="
     )
 
-    collection_type = (
-        args.collection_type
-    )
-
-    if collection_type is None:
-
-        collection_type = (
-            ask_collection_type()
+    if args.filter is not None:
+        if not args.filter.is_file():
+            parser.error("filter CSV not found: %s" % args.filter)
+        if args.target is not None and args.target <= 0:
+            parser.error("--target must be greater than zero")
+        color_only = args.color_only if args.color_only is not None else ask_color()
+        candidates, match_count = choose_candidates(
+            [], source_csv=args.filter
         )
-
-    paintings_only = (
-        collection_type
-        == "painting"
-    )
-
-    if paintings_only:
-
-        object_type = "any"
-        object_terms = []
-
+        target = args.target if args.target is not None else DEFAULT_TARGET
     else:
-
-        object_type = (
-            args.object_type
+        collection_type = (
+            args.collection_type
         )
 
-        if object_type is None:
+        if collection_type is None:
 
-            object_type = (
-                ask_object_type()
+            collection_type = (
+                ask_collection_type()
             )
 
-        object_terms = (
-            OBJECT_FILTERS[
-                object_type
-            ][1]
+        paintings_only = (
+            collection_type
+            == "painting"
         )
 
-    color_only = (
-        args.color_only
-    )
+        if paintings_only:
 
-    if color_only is None:
+            object_type = "any"
+            object_terms = []
 
-        color_only = ask_color()
+        else:
 
-    subject_value = (
-        args.subject
-    )
+            object_type = (
+                args.object_type
+            )
 
-    if subject_value is None:
+            if object_type is None:
+
+                object_type = (
+                    ask_object_type()
+                )
+
+            object_terms = (
+                OBJECT_FILTERS[
+                    object_type
+                ][1]
+            )
+
+        color_only = (
+            args.color_only
+        )
+
+        if color_only is None:
+
+            color_only = ask_color()
 
         subject_value = (
-            ask_subject()
+            args.subject
         )
 
-    subject_choices = (
-        parse_subject_choices(
-            subject_value
-        )
-    )
+        if subject_value is None:
 
-    (
-        subject_labels,
-        subject_terms
-    ) = get_subject_info(
-        subject_choices
-    )
+            subject_value = (
+                ask_subject()
+            )
 
-    if args.artist is None:
-
-        artist = ask_artist()
-
-    else:
-
-        artist = (
-            args.artist.strip()
+        subject_choices = (
+            parse_subject_choices(
+                subject_value
+            )
         )
 
-    artists = (
-        parse_artist_filter(
-            artist
-        )
-    )
-
-    if args.query is None:
-
-        query = ask_query(
-            paintings_only
-        )
-
-    else:
-
-        query = (
-            args.query.strip()
-        )
-
-    groups = parse_query(
-        query
-    )
-
-    try:
-
-        year_range = parse_year_filter(
-            args.year
-        )
-
-    except ValueError as e:
-
-        parser.error(
-            str(e)
-        )
-
-    target = (
-        args.target
-        if args.target is not None
-        else DEFAULT_TARGET
-    )
-
-    if target <= 0:
-
-        parser.error(
-            "--target must be greater than zero"
-        )
-
-    download_csv()
-
-    candidates, match_count = (
-        choose_candidates(
-            groups,
-            artists,
-            paintings_only,
-            subject_terms,
-            object_terms,
-            year_range,
-            args.region,
-            args.medium,
-            args.culture,
-            args.tag,
-            args.highlight
-        )
-    )
-
-    if args.dry_run:
-
-        show_dry_run(
-            collection_type,
-            object_type,
-            subject_choices,
+        (
             subject_labels,
-            color_only,
-            artist,
-            query,
-            args.year,
-            args.region,
-            args.medium,
-            args.culture,
-            args.tag,
-            args.highlight,
-            target,
-            match_count
+            subject_terms
+        ) = get_subject_info(
+            subject_choices
         )
 
-        return 0
+        if args.artist is None:
+
+            artist = ask_artist()
+
+        else:
+
+            artist = (
+                args.artist.strip()
+            )
+
+        artists = (
+            parse_artist_filter(
+                artist
+            )
+        )
+
+        if args.query is None:
+
+            query = ask_query(
+                paintings_only
+            )
+
+        else:
+
+            query = (
+                args.query.strip()
+            )
+
+        groups = parse_query(
+            query
+        )
+
+        try:
+
+            year_range = parse_year_filter(
+                args.year
+            )
+
+        except ValueError as e:
+
+            parser.error(
+                str(e)
+            )
+
+        target = (
+            args.target
+            if args.target is not None
+            else DEFAULT_TARGET
+        )
+
+        if target <= 0:
+
+            parser.error(
+                "--target must be greater than zero"
+            )
+
+        if args.filter is None:
+            download_csv()
+
+        if args.dry_run:
+            match_count = export_filtered_csv(
+                groups, artists, paintings_only, subject_terms, object_terms,
+                year_range, args.region, args.medium, args.culture, args.tag,
+                args.highlight
+            )
+            candidates = []
+        else:
+            candidates, match_count = (
+            choose_candidates(
+                groups,
+                artists,
+                paintings_only,
+                subject_terms,
+                object_terms,
+                year_range,
+                args.region,
+                args.medium,
+                args.culture,
+                args.tag,
+                args.highlight
+            )
+        )
+
+        if args.dry_run:
+
+            show_dry_run(
+                collection_type,
+                object_type,
+                subject_choices,
+                subject_labels,
+                color_only,
+                artist,
+                query,
+                args.year,
+                args.region,
+                args.medium,
+                args.culture,
+                args.tag,
+                args.highlight,
+                target,
+                match_count
+            )
+
+            return 0
 
     if not candidates:
 
