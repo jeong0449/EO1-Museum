@@ -2,7 +2,7 @@
 original*/
 
 # Generated display images
-display/
+display*/
 
 # The Met Open Access dataset
 MetObjects.csv
