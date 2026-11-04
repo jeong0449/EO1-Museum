@@ -173,6 +173,45 @@ public class MainActivity extends Activity {
     // by the native VideoView on behalf of index.html.
     private boolean networkVideoActive = false;
 
+    // Network MP4 preparation watchdog (Android 4.4 VideoView).
+    private static final long NETWORK_VIDEO_PREPARE_TIMEOUT_MS = 15000L;
+    private static final int NETWORK_VIDEO_MAX_CONSECUTIVE_FAILURES = 3;
+    private int networkVideoGeneration = 0;
+    private int networkVideoConsecutiveFailures = 0;
+    private boolean networkVideoPrepared = false;
+    private String currentNetworkVideoUrl = null;
+    private Runnable networkVideoWatchdog = null;
+    private Runnable networkVideoErrorRecovery = null;
+
+    private void cancelNetworkVideoErrorRecovery() {
+        if (networkVideoErrorRecovery != null) {
+            handler.removeCallbacks(networkVideoErrorRecovery);
+            networkVideoErrorRecovery = null;
+        }
+    }
+
+    private void cancelNetworkVideoWatchdog() {
+        if (networkVideoWatchdog != null) {
+            handler.removeCallbacks(networkVideoWatchdog);
+            networkVideoWatchdog = null;
+        }
+    }
+
+    private void armNetworkVideoWatchdog(final int generation) {
+        cancelNetworkVideoWatchdog();
+        networkVideoWatchdog = new Runnable() {
+            @Override
+            public void run() {
+                if (currentMode != MODE_NETWORK || !networkVideoActive ||
+                        networkVideoPrepared || generation != networkVideoGeneration) return;
+                writeLog("Network MP4 prepare TIMEOUT after 15s: " + currentNetworkVideoUrl);
+                finishNetworkVideo(false);
+            }
+        };
+        handler.postDelayed(networkVideoWatchdog, NETWORK_VIDEO_PREPARE_TIMEOUT_MS);
+    }
+
+
     // Local Gallery companion-pan state.
     private boolean localPanVideoActive = false;
     private File currentLocalBaseFile = null;
@@ -405,6 +444,7 @@ public class MainActivity extends Activity {
         networkHandler.removeCallbacks(
                 networkTimeoutRunnable
         );
+        cancelNetworkVideoWatchdog();
 
         clockHandler.removeCallbacks(
                 clockRunnable
@@ -950,9 +990,22 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // Do not let a delayed error from an earlier session terminate this one.
+        cancelNetworkVideoErrorRecovery();
+        if (networkVideoActive) {
+            writeLog("Network MP4 superseded: " + currentNetworkVideoUrl);
+            cancelNetworkVideoWatchdog();
+            networkVideoActive = false;
+            networkVideoGeneration++;
+            try { videoView.stopPlayback(); } catch (Exception ignored) {}
+        }
         writeLog("Network native video: " + videoUrl);
 
         networkVideoActive = true;
+        networkVideoPrepared = false;
+        currentNetworkVideoUrl = videoUrl;
+        final int generation = ++networkVideoGeneration;
+        armNetworkVideoWatchdog(generation);
 
         handler.removeCallbacks(nextImageRunnable);
 
@@ -969,7 +1022,9 @@ public class MainActivity extends Activity {
         showProgress();
 
         try {
-            videoView.stopPlayback();
+            // setVideoURI itself replaces the previous source. Avoid an
+            // unconditional stop() while the old MediaPlayer is PREPARING.
+            writeLog("Network MP4 setVideoURI generation=" + generation + " url=" + videoUrl);
             videoView.setVideoURI(Uri.parse(videoUrl));
             videoView.requestFocus();
         } catch (Exception e) {
@@ -988,15 +1043,25 @@ public class MainActivity extends Activity {
             return;
         }
 
-        writeLog("Network native video finished success=" + success);
-
+        writeLog("Network native video finished success=" + success +
+                " url=" + currentNetworkVideoUrl);
+        cancelNetworkVideoWatchdog();
+        cancelNetworkVideoErrorRecovery();
+        networkVideoGeneration++;
         networkVideoActive = false;
+        currentNetworkVideoUrl = null;
+        if (!success) {
+            networkVideoConsecutiveFailures++;
+            writeLog("Network MP4 consecutive failures=" + networkVideoConsecutiveFailures);
+        }
+
 
         hideProgress();
 
         try {
             videoView.stopPlayback();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            writeLog("Network MP4 cleanup stopPlayback: " + e.getMessage());
         }
 
         videoView.setVisibility(View.GONE);
@@ -1009,7 +1074,14 @@ public class MainActivity extends Activity {
                 clockView.bringToFront();
             }
 
-            notifyNetworkVideoFinished(success);
+            if (!success && networkVideoConsecutiveFailures >=
+                    NETWORK_VIDEO_MAX_CONSECUTIVE_FAILURES) {
+                writeLog("Network MP4 failed 3 consecutive times; switching to Internal Gallery");
+                showSyncMessage("Video errors - switching to Internal Gallery", 4000L);
+                showLocalMode();
+            } else {
+                notifyNetworkVideoFinished(success);
+            }
         }
     }
 
@@ -1403,6 +1475,13 @@ public class MainActivity extends Activity {
                     writeLog(
                             "Video prepared"
                     );
+                    if (currentMode == MODE_NETWORK && networkVideoActive) {
+                        networkVideoPrepared = true;
+                        networkVideoConsecutiveFailures = 0;
+                        cancelNetworkVideoWatchdog();
+                        writeLog("Network MP4 prepared generation=" + networkVideoGeneration +
+                                " url=" + currentNetworkVideoUrl);
+                    }
 
                     hideProgress();
 
@@ -1460,6 +1539,7 @@ public class MainActivity extends Activity {
         videoView.setOnErrorListener(
                 (mp, what, extra) -> {
 
+                    writeLog("Video error currentNetworkUrl=" + currentNetworkVideoUrl);
                     writeLog(
                             "Video error what=" +
                                     what +
@@ -1475,34 +1555,37 @@ public class MainActivity extends Activity {
                             Toast.LENGTH_SHORT
                     ).show();
 
-                    handler.postDelayed(
-                            new Runnable() {
-
-                                @Override
-                                public void run() {
-
-                                    if (currentMode == MODE_NETWORK &&
-                                            networkVideoActive) {
-
-                                        finishNetworkVideo(false);
-
-                                    } else if (currentMode == MODE_LOCAL &&
-                                            localPanVideoActive) {
-
-                                        finishLocalPanVideo(false);
-
-                                    } else if (currentMode == MODE_ART) {
-
-                                        showNextArt();
-
-                                    } else {
-
-                                        showNextMedia();
-                                    }
+                    // Capture the session identity. An old delayed error must
+                    // never fail a newer artwork's MP4.
+                    cancelNetworkVideoErrorRecovery();
+                    final int errorGeneration = networkVideoGeneration;
+                    final String errorUrl = currentNetworkVideoUrl;
+                    networkVideoErrorRecovery = new Runnable() {
+                        @Override
+                        public void run() {
+                            networkVideoErrorRecovery = null;
+                            if (currentMode == MODE_NETWORK) {
+                                if (networkVideoActive &&
+                                        errorGeneration == networkVideoGeneration &&
+                                        errorUrl != null &&
+                                        errorUrl.equals(currentNetworkVideoUrl)) {
+                                    writeLog("Network MP4 error recovery generation=" +
+                                            errorGeneration + " url=" + errorUrl);
+                                    finishNetworkVideo(false);
+                                } else {
+                                    writeLog("Ignored stale network MP4 error generation=" +
+                                            errorGeneration + " url=" + errorUrl);
                                 }
-                            },
-                            500
-                    );
+                            } else if (currentMode == MODE_LOCAL && localPanVideoActive) {
+                                finishLocalPanVideo(false);
+                            } else if (currentMode == MODE_ART) {
+                                showNextArt();
+                            } else if (currentMode != MODE_LOCAL) {
+                                showNextMedia();
+                            }
+                        }
+                    };
+                    handler.postDelayed(networkVideoErrorRecovery, 500);
 
                     return true;
                 }
@@ -1520,7 +1603,12 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_LOCAL;
+        cancelNetworkVideoWatchdog();
+        cancelNetworkVideoErrorRecovery();
+        networkVideoGeneration++;
         networkVideoActive = false;
+        networkVideoPrepared = false;
+        currentNetworkVideoUrl = null;
         localPanVideoActive = false;
         currentLocalBaseFile = null;
 
@@ -1927,7 +2015,12 @@ public class MainActivity extends Activity {
         writeLog("showArtMode");
 
         currentMode = MODE_ART;
+        cancelNetworkVideoWatchdog();
+        cancelNetworkVideoErrorRecovery();
+        networkVideoGeneration++;
         networkVideoActive = false;
+        networkVideoPrepared = false;
+        currentNetworkVideoUrl = null;
         currentArtFileName = null;
 
         handler.removeCallbacks(nextImageRunnable);
@@ -2055,7 +2148,12 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_NETWORK;
+        cancelNetworkVideoWatchdog();
+        cancelNetworkVideoErrorRecovery();
+        networkVideoGeneration++;
         networkVideoActive = false;
+        networkVideoPrepared = false;
+        currentNetworkVideoUrl = null;
 
         handler.removeCallbacks(
                 nextImageRunnable
