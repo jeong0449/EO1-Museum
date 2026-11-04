@@ -30,3 +30,5 @@ local.properties
 art/*.mp4
 
 scratch/
+
+filtered.csv
