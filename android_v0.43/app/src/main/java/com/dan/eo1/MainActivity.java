@@ -366,6 +366,7 @@ public class MainActivity extends Activity {
         writeLog("onCreate");
 
         loadConfig();
+        recoverInterruptedGallerySwap();
 
         setupWebView();
         setupVideoView();
@@ -468,6 +469,16 @@ public class MainActivity extends Activity {
         }
 
         super.onDestroy();
+    }
+
+    private void recoverInterruptedGallerySwap() {
+        File live = new File(MEDIA_DIR);
+        File parent = live.getParentFile();
+        File backup = new File(parent, "images_old");
+        if (!live.exists() && backup.exists()) {
+            boolean ok = backup.renameTo(live);
+            writeLog("Gallery swap startup recovery: " + ok);
+        }
     }
 
     // ------------------------------------------------------------
@@ -1174,71 +1185,130 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            int completedArtworks = 0;
-            int completedFiles = 0;
-            boolean stoppedForSpace = false;
-
+            // v0.44: stage the complete collection before touching the live one.
+            List<String> transferPaths = new ArrayList<String>();
             for (int i = 0; i < artworkLimit; i++) {
                 String basePath = artworkPaths.get(i);
-
-                if (!hasReserveSpace(mediaDir, 0)) {
-                    writeLog("Safe Sync stopped: MIN_FREE_MB=" + minFreeMb);
-                    stoppedForSpace = true;
-                    break;
+                transferPaths.add(basePath);
+                String panJpg = makePanJpgPath(basePath);
+                if (availablePaths.contains(panJpg)) {
+                    transferPaths.add(panJpg);
+                    String panMp4 = replaceExtension(panJpg, ".mp4");
+                    if (remoteFileExists(baseUrl + panMp4)) transferPaths.add(panMp4);
                 }
-
-                showSyncMessage("Syncing... " + (i + 1) + " / " + artworkLimit, 0L);
-
-                boolean baseOk = syncOneFile(baseUrl, basePath, mediaDir);
-                if (!baseOk) {
-                    writeLog("Safe Sync failed base artwork: " + basePath);
-                    continue;
-                }
-                completedFiles++;
-
-                String panJpgPath = makePanJpgPath(basePath);
-                if (availablePaths.contains(panJpgPath)) {
-                    if (syncOneFile(baseUrl, panJpgPath, mediaDir)) {
-                        completedFiles++;
-                    } else {
-                        writeLog("Safe Sync optional pan JPG failed: " + panJpgPath);
-                    }
-
-                    String panMp4Path = replaceExtension(panJpgPath, ".mp4");
-                    if (remoteFileExists(baseUrl + panMp4Path)) {
-                        if (syncOneFile(baseUrl, panMp4Path, mediaDir)) {
-                            completedFiles++;
-                        } else {
-                            writeLog("Safe Sync optional pan MP4 failed: " + panMp4Path);
-                        }
-                    } else {
-                        writeLog("Safe Sync: no pan MP4 companion for " + basePath);
-                    }
-                }
-
-                completedArtworks++;
-                writeLog("Safe Sync artwork complete: " + (i + 1) + "/" + artworkLimit +
-                        " files=" + completedFiles);
             }
 
-            writeLog("Safe Sync complete: artworks=" + completedArtworks +
-                    "/" + artworkLimit + " files=" + completedFiles);
+            Set<String> names = new HashSet<String>();
+            List<Long> sizes = new ArrayList<Long>();
+            long requiredBytes = 0L;
+            for (String path : transferPaths) {
+                String name = new File(path).getName();
+                if (!isSafeSyncFilename(name) || !names.add(name)) {
+                    showSyncMessage("Sync refused: invalid file list", 5000L);
+                    return;
+                }
+                long size = remoteFileLength(baseUrl + path);
+                if (size <= 0 || requiredBytes > Long.MAX_VALUE - size) {
+                    showSyncMessage("Sync refused: unknown file size", 5000L);
+                    return;
+                }
+                requiredBytes += size;
+                sizes.add(size);
+            }
 
-            if (stoppedForSpace) {
-                showSyncMessage("Sync stopped: free space limit (" +
-                        completedArtworks + " / " + artworkLimit + ")", 6000L);
-            } else if (completedArtworks == artworkLimit) {
-                showSyncMessage("Sync complete: " + completedArtworks +
-                        " artworks", 4000L);
+            File parent = mediaDir.getParentFile();
+            File stage = new File(parent, "images_new");
+            File backup = new File(parent, "images_old");
+            if (stage.exists() || backup.exists()) {
+                writeLog("Staged Sync refused: leftover images_new/images_old; manual inspection required");
+                showSyncMessage("Sync stopped: pending gallery recovery", 6000L);
+                return;
+            }
+            if (!mediaDir.exists() && !mediaDir.mkdirs()) {
+                showSyncMessage("Sync failed: storage unavailable", 5000L);
+                return;
+            }
+            long freeBytes = getAvailableBytes(mediaDir);
+            long reserveBytes = minFreeMb * 1024L * 1024L;
+            if (freeBytes < 0 || requiredBytes > freeBytes - reserveBytes) {
+                writeLog("Staged Sync refused: required=" + requiredBytes + " free=" + freeBytes);
+                showSyncMessage("Sync refused: insufficient storage", 6000L);
+                return;
+            }
+            if (!stage.mkdir()) {
+                showSyncMessage("Sync failed: cannot create staging directory", 5000L);
+                return;
+            }
+
+            boolean transferOk = false;
+            try {
+                for (int i = 0; i < transferPaths.size(); i++) {
+                    String path = transferPaths.get(i);
+                    String name = new File(path).getName();
+                    showSyncMessage("Syncing... " + (i + 1) + " / " + transferPaths.size(), 0L);
+                    if (!syncOneFile(baseUrl, path, stage)) {
+                        writeLog("Staged Sync failed: " + path);
+                        showSyncMessage("Sync failed: old gallery preserved", 6000L);
+                        return;
+                    }
+                    File downloaded = new File(stage, name);
+                    if (downloaded.length() != sizes.get(i)) {
+                        writeLog("Staged Sync size mismatch: " + name);
+                        showSyncMessage("Sync failed: size mismatch", 6000L);
+                        return;
+                    }
+                }
+                File[] stagedFiles = stage.listFiles();
+                if (stagedFiles == null || stagedFiles.length != transferPaths.size()) {
+                    showSyncMessage("Sync failed: verification error", 6000L);
+                    return;
+                }
+                transferOk = true;
+            } finally {
+                if (!transferOk) {
+                    if (!deleteFlatDirectory(stage))
+                        writeLog("Staged Sync cleanup incomplete: " + stage);
+                }
+            }
+
+            // Directory renames are on the same filesystem. Keep the backup
+            // until the new gallery has successfully taken the live name.
+            showSyncMessage("Installing new collection...", 0L);
+            if (!mediaDir.renameTo(backup)) {
+                writeLog("Staged Sync: cannot rename live gallery to backup");
+                showSyncMessage("Sync failed: old gallery preserved", 6000L);
+                return;
+            }
+            if (!stage.renameTo(mediaDir)) {
+                boolean restored = backup.renameTo(mediaDir);
+                writeLog("Staged Sync activation failed; restored=" + restored);
+                showSyncMessage(restored ? "Sync failed: old gallery restored" :
+                        "Sync error: recovery needed", 7000L);
+                return;
+            }
+            writeLog("Staged Sync activated: " + transferPaths.size() + " files");
+            if (!deleteFlatDirectory(backup)) {
+                writeLog("Staged Sync warning: backup cleanup incomplete");
+                showSyncMessage("Sync complete; old backup remains", 6000L);
             } else {
-                showSyncMessage("Sync finished: " + completedArtworks +
-                        " / " + artworkLimit, 5000L);
+                showSyncMessage("Sync complete: " + artworkLimit + " artworks", 4000L);
             }
 
         } catch (Exception e) {
             writeLog("Safe Sync error: " + e.getMessage());
             showSyncMessage("Sync error: " + e.getMessage(), 5000L);
         }
+    }
+
+    // Only remove files from our dedicated staging/backup directories.
+    private boolean deleteFlatDirectory(File dir) {
+        if (!dir.exists()) return true;
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File file : files) {
+            if (!file.isFile() || !file.delete()) return false;
+        }
+        return dir.delete();
     }
 
     private boolean syncOneFile(String baseUrl, String relativePath, File mediaDir) {
@@ -1260,6 +1330,40 @@ public class MainActivity extends Activity {
             writeLog("Safe Sync failed: " + relativePath);
         }
         return ok;
+    }
+
+    // HEAD preflight: reject unknown-length files before deleting old media.
+    private long remoteFileLength(String urlString) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(urlString).openConnection();
+            connection.setConnectTimeout(connectTimeoutSec * 1000);
+            connection.setReadTimeout(connectTimeoutSec * 1000);
+            connection.setUseCaches(false);
+            connection.setRequestMethod("HEAD");
+            connection.connect();
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return -1L;
+            return connection.getContentLength();
+        } catch (Exception e) {
+            writeLog("Replace Sync HEAD error: " + e.getMessage());
+            return -1L;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private boolean isSafeSyncFilename(String name) {
+        return name != null && name.matches("[A-Za-z0-9_-]+\\.(?i:jpg|jpeg|png|mp4)");
+    }
+
+    private long getAvailableBytes(File dir) {
+        try {
+            StatFs stat = new StatFs(dir.getAbsolutePath());
+            return (long) stat.getAvailableBlocks() * (long) stat.getBlockSize();
+        } catch (Exception e) {
+            writeLog("Replace Sync stat error: " + e.getMessage());
+            return -1L;
+        }
     }
 
     private boolean remoteFileExists(String urlString) {

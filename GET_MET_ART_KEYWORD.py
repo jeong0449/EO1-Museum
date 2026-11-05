@@ -4,6 +4,7 @@ import shlex
 import argparse
 import csv
 import json
+import os
 import random
 import shutil
 import sys
@@ -19,11 +20,17 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "4.1"
+VERSION = "4.2"
 EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
-BUILD_DATE = "2026-11-04"
+BUILD_DATE = "2026-11-05"
 
 # Version history
+#
+# v4.2
+#   - Check MetObjects.csv upstream file commits on every run.
+#   - Ask before updating; download to a temporary file and validate before replacement.
+#   - Preserve existing CSV if the check or download fails.
+#   - Skip prompts in non-interactive sessions.
 #
 # v4.1
 #   - Dry-run exports all matching CSV records to filtered.csv with timestamp and command.
@@ -83,6 +90,11 @@ BUILD_DATE = "2026-11-04"
 ROOT = Path(__file__).resolve().parent
 
 CSVFILE = ROOT / "MetObjects.csv"
+CSV_VERSION_FILE = ROOT / ".metobjects_version.json"
+CSV_COMMITS_API = (
+    "https://api.github.com/repos/metmuseum/openaccess/commits"
+    "?path=MetObjects.csv&per_page=1"
+)
 FILTERED_CSV = ROOT / "filtered.csv"
 ORIGINAL = ROOT / "original"
 META = ROOT / "met_metadata.json"
@@ -732,36 +744,121 @@ def fetch(url):
 # Download Met CSV
 # ============================================================
 
-def download_csv():
-
-    if CSVFILE.exists():
-        return
-
-    print()
-    print("MetObjects.csv not found.")
-    print(
-        "Downloading Met Open Access metadata..."
+def get_remote_csv_version():
+    """Latest commit affecting MetObjects.csv, not the repository as a whole."""
+    req = urllib.request.Request(
+        CSV_COMMITS_API,
+        headers={"User-Agent": UA, "Accept": "application/vnd.github+json"},
     )
-    print()
+    with urllib.request.urlopen(req, timeout=12) as response:
+        commits = json.load(response)
+    if not isinstance(commits, list) or not commits or not commits[0].get("sha"):
+        raise ValueError("GitHub returned no CSV commit information")
+    commit = commits[0]
+    return {
+        "sha": commit["sha"],
+        "date": (commit.get("commit", {}).get("committer", {}) or {}).get("date", "unknown"),
+    }
 
-    with fetch(CSV_URL) as r, \
-            open(CSVFILE, "wb") as f:
 
-        while True:
+def read_csv_version():
+    try:
+        return json.loads(CSV_VERSION_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
-            block = r.read(
-                1024 * 1024
-            )
 
-            if not block:
-                break
+def save_csv_version(version):
+    temporary = CSV_VERSION_FILE.with_name(CSV_VERSION_FILE.name + ".tmp")
+    try:
+        temporary.write_text(json.dumps(version, indent=2) + "\n", encoding="utf-8")
+        os.replace(str(temporary), str(CSV_VERSION_FILE))
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
-            f.write(block)
 
-    print(
-        "Saved:",
-        CSVFILE
-    )
+def download_csv(version=None):
+    """Download and validate a complete CSV before atomically replacing it."""
+    temporary = CSVFILE.with_name(CSVFILE.name + ".download")
+    print("Downloading Met Open Access metadata...")
+    try:
+        if temporary.exists():
+            temporary.unlink()
+        with fetch(CSV_URL) as response, open(temporary, "wb") as output:
+            expected = response.headers.get("Content-Length")
+            copied = 0
+            while True:
+                block = response.read(1024 * 1024)
+                if not block:
+                    break
+                output.write(block)
+                copied += len(block)
+            if expected and copied != int(expected):
+                raise IOError("Incomplete CSV download (%d/%s bytes)" % (copied, expected))
+        if temporary.stat().st_size < 1000000:
+            raise ValueError("Downloaded CSV is unexpectedly small")
+        with open(temporary, "r", encoding="utf-8-sig", newline="") as check:
+            header = next(csv.reader(check), [])
+            if "Object ID" not in header or "Is Public Domain" not in header:
+                raise ValueError("Downloaded file has an invalid MetObjects.csv header")
+        os.replace(str(temporary), str(CSVFILE))
+        print("Saved:", CSVFILE)
+        if version:
+            try:
+                save_csv_version(version)
+            except Exception as exc:
+                print("WARNING: Could not save CSV version marker:", exc)
+        return True
+    except Exception as exc:
+        print("WARNING: CSV download failed; existing CSV preserved:", exc)
+        return False
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def check_csv_update():
+    """Check on every execution; ask only when remote version is new or unknown."""
+    print("Checking The Met Open Access CSV...")
+    try:
+        remote = get_remote_csv_version()
+    except Exception as exc:
+        print("WARNING: Update check unavailable:", exc)
+        if CSVFILE.is_file():
+            print("Using existing MetObjects.csv.")
+            return True
+        print("MetObjects.csv is missing; attempting initial download.")
+        return download_csv()
+
+    if not CSVFILE.is_file():
+        print("MetObjects.csv not found; downloading initial copy.")
+        return download_csv(remote)
+
+    local = read_csv_version()
+    if local.get("sha") == remote["sha"]:
+        print("MetObjects.csv is up to date (tracked version).")
+        return True
+
+    if local.get("sha"):
+        print("A newer MetObjects.csv version is available.")
+    else:
+        print("Local CSV version is unknown (first check).")
+        print("The existing file may already be current; this cannot be verified yet.")
+    print("Latest upstream file commit:", remote["date"], remote["sha"][:12])
+    if not sys.stdin.isatty():
+        print("Non-interactive session: skipping CSV update.")
+        return True
+    try:
+        answer = input("Download and replace MetObjects.csv? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\nKeeping existing MetObjects.csv.")
+        return True
+    if answer not in ("y", "yes"):
+        print("Keeping existing MetObjects.csv.")
+        return True
+    download_csv(remote)
+    return True
 
 
 # ============================================================
@@ -1381,8 +1478,6 @@ def diagnose_keyword(
             "ERROR: diagnostic keyword is empty."
         )
         return 2
-
-    download_csv()
 
     print()
     print(
@@ -3051,6 +3146,10 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
+    if not check_csv_update():
+        print("ERROR: No usable MetObjects.csv is available.")
+        return 1
+
     if args.filter is not None and args.dry_run:
         parser.error("--filter and --dry-run cannot be used together")
 
@@ -3236,9 +3335,6 @@ def main():
             parser.error(
                 "--target must be greater than zero"
             )
-
-        if args.filter is None:
-            download_csv()
 
         if args.dry_run:
             match_count = export_filtered_csv(
