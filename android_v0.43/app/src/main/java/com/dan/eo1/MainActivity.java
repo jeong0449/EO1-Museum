@@ -215,10 +215,36 @@ public class MainActivity extends Activity {
     // Local Gallery companion-pan state.
     private boolean localPanVideoActive = false;
     private File currentLocalBaseFile = null;
-    private static final long LOCAL_FULL_HOLD = 15000L;
+    private static final long LOCAL_FULL_HOLD = 30000L;
     private static final long LOCAL_DETAIL_HOLD = 6000L;
     private static final long LOCAL_FINAL_FULL_HOLD = 5000L;
     private static final long LOCAL_DISSOLVE_TIME = 1500L;
+
+    // Only the ordinary local still uses the user-selected imageInterval.
+    // Pan artwork has its own fixed 30-second opening hold.
+    private boolean localNormalStillActive = false;
+    private Runnable localGalleryTimer = null;
+
+    private void cancelLocalGalleryTimer() {
+        if (localGalleryTimer != null) {
+            handler.removeCallbacks(localGalleryTimer);
+            localGalleryTimer = null;
+        }
+    }
+
+    private void scheduleLocalGalleryTimer(final Runnable action, long delayMs) {
+        cancelLocalGalleryTimer();
+        localGalleryTimer = new Runnable() {
+            @Override
+            public void run() {
+                if (localGalleryTimer != this) return;
+                localGalleryTimer = null;
+                if (currentMode == MODE_LOCAL) action.run();
+            }
+        };
+        handler.postDelayed(localGalleryTimer, delayMs);
+    }
+
 
     private final Runnable networkTimeoutRunnable =
             new Runnable() {
@@ -377,6 +403,7 @@ public class MainActivity extends Activity {
          * to Internal Gallery and do not keep polling in the background.
          */
         currentMode = MODE_NETWORK;
+        localNormalStillActive = false;
 
         /*
          * Clock always starts ON.
@@ -1019,6 +1046,7 @@ public class MainActivity extends Activity {
         armNetworkVideoWatchdog(generation);
 
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
 
         imageView.setVisibility(View.GONE);
         imageViewNext.setVisibility(View.GONE);
@@ -1707,6 +1735,7 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_LOCAL;
+        localNormalStillActive = false;
         cancelNetworkVideoWatchdog();
         cancelNetworkVideoErrorRecovery();
         networkVideoGeneration++;
@@ -1829,6 +1858,7 @@ public class MainActivity extends Activity {
         if (currentMode != MODE_LOCAL) return;
 
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
         localPanVideoActive = false;
         hideProgress();
 
@@ -1847,7 +1877,11 @@ public class MainActivity extends Activity {
 
         currentLocalBaseFile = mediaFiles.get(mediaIndex);
         writeLog("Showing local artwork: " + currentLocalBaseFile.getName());
-        showLocalFullImage(currentLocalBaseFile, LOCAL_FULL_HOLD, true);
+        boolean hasPan = getLocalPanMp4(currentLocalBaseFile).isFile()
+                || getLocalPanJpg(currentLocalBaseFile).isFile();
+        localNormalStillActive = !hasPan;
+        showLocalFullImage(currentLocalBaseFile,
+                hasPan ? LOCAL_FULL_HOLD : imageInterval, hasPan);
     }
 
     private void showLocalFullImage(final File file,
@@ -1858,6 +1892,7 @@ public class MainActivity extends Activity {
 
         hideProgress();
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
 
         try { videoView.stopPlayback(); } catch (Exception ignored) {}
         videoView.setVisibility(View.GONE);
@@ -1903,13 +1938,14 @@ public class MainActivity extends Activity {
             firstImageActive = !firstImageActive;
         }
 
-        handler.postDelayed(new Runnable() {
+        scheduleLocalGalleryTimer(new Runnable() {
             @Override
             public void run() {
-                if (currentMode != MODE_LOCAL) return;
                 if (startCompanionAfterHold) {
+                    localNormalStillActive = false;
                     startLocalCompanion();
                 } else {
+                    localNormalStillActive = false;
                     showNextMedia();
                 }
             }
@@ -1950,7 +1986,10 @@ public class MainActivity extends Activity {
 
         writeLog("Local native pan video: " + panMp4.getName());
         localPanVideoActive = true;
+        localNormalStillActive = false;
+        cancelLocalGalleryTimer();
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
 
         imageView.setVisibility(View.GONE);
         imageViewNext.setVisibility(View.GONE);
@@ -2062,10 +2101,10 @@ public class MainActivity extends Activity {
 
         writeLog("Local static pan position=" + position + " file=" + panJpg.getName());
 
-        handler.postDelayed(new Runnable() {
+        scheduleLocalGalleryTimer(new Runnable() {
             @Override
             public void run() {
-                if (currentMode == MODE_LOCAL && next != null) next.run();
+                if (next != null) next.run();
             }
         }, LOCAL_DETAIL_HOLD);
     }
@@ -2119,6 +2158,7 @@ public class MainActivity extends Activity {
         writeLog("showArtMode");
 
         currentMode = MODE_ART;
+        localNormalStillActive = false;
         cancelNetworkVideoWatchdog();
         cancelNetworkVideoErrorRecovery();
         networkVideoGeneration++;
@@ -2128,6 +2168,7 @@ public class MainActivity extends Activity {
         currentArtFileName = null;
 
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
         networkHandler.removeCallbacks(networkTimeoutRunnable);
         networkPageLoaded = false;
 
@@ -2213,6 +2254,7 @@ public class MainActivity extends Activity {
         writeLog("Playing Art MP4: " + file.getName());
 
         handler.removeCallbacks(nextImageRunnable);
+        cancelLocalGalleryTimer();
         webView.stopLoading();
         webView.setVisibility(View.GONE);
         imageView.setVisibility(View.GONE);
@@ -2252,6 +2294,7 @@ public class MainActivity extends Activity {
         );
 
         currentMode = MODE_NETWORK;
+        localNormalStillActive = false;
         cancelNetworkVideoWatchdog();
         cancelNetworkVideoErrorRecovery();
         networkVideoGeneration++;
@@ -2798,16 +2841,19 @@ public class MainActivity extends Activity {
 
                                 imageInterval = values[which];
 
-                                // Apply the new duration immediately to the
-                                // currently displayed still image. Videos are
-                                // unaffected and continue until completion.
+                                // Change only an ordinary Local Gallery still.
+                                // Pan opening/detail/final stages and videos keep
+                                // their dedicated timing. A single cancellable
+                                // timer prevents duplicate or stale transitions.
                                 if (currentMode == MODE_LOCAL &&
-                                        videoView.getVisibility() != View.VISIBLE) {
-                                    handler.removeCallbacks(nextImageRunnable);
-                                    handler.postDelayed(
-                                            nextImageRunnable,
-                                            imageInterval
-                                    );
+                                        localNormalStillActive) {
+                                    scheduleLocalGalleryTimer(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            localNormalStillActive = false;
+                                            showNextMedia();
+                                        }
+                                    }, imageInterval);
                                 }
 
                                 writeLog(
