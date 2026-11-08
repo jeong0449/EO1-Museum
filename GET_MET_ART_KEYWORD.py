@@ -20,11 +20,13 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "4.2"
+VERSION = "4.3"
 EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
-BUILD_DATE = "2026-11-05"
+BUILD_DATE = "2026-11-08"
 
 # Version history
+# v4.3
+#   - Added standalone --archive mode (no CSV check or search).
 #
 # v4.2
 #   - Check MetObjects.csv upstream file commits on every run.
@@ -709,6 +711,12 @@ def build_parser():
             "search/count only; "
             "do not modify or download artwork"
         ),
+    )
+
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        help="archive current collection and exit without other operations",
     )
 
     parser.add_argument(
@@ -3145,6 +3153,13 @@ def main():
 
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.archive:
+        if not ORIGINAL.exists() and not META.exists():
+            print("Nothing to archive: original/ and met_metadata.json are absent.")
+            return 0
+        archive_current_collection()
+        return 0
 
     if not check_csv_update():
         print("ERROR: No usable MetObjects.csv is available.")
