@@ -20,11 +20,13 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "4.3"
+VERSION = "4.4"
 EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
 BUILD_DATE = "2026-11-08"
 
 # Version history
+# v4.4
+#   - Added --department exact Department-field filter (comma-separated OR).
 # v4.3
 #   - Added standalone --archive mode (no CSV check or search).
 #
@@ -673,6 +675,11 @@ def build_parser():
     )
 
     parser.add_argument(
+        "--department",
+        help="exact Department field match; commas mean OR, e.g. Asian Art,Islamic Art",
+    )
+
+    parser.add_argument(
         "--culture",
         help=(
             "filter by Culture metadata; "
@@ -1073,6 +1080,14 @@ def matches_culture(row, culture):
         term in text
         for term in terms
     )
+
+def matches_department(row, department):
+    if not department:
+        return True
+    actual = (row.get("Department") or "").strip().casefold()
+    choices = [part.strip().casefold() for part in department.split(",") if part.strip()]
+    return actual in choices if choices else True
+
 
 def matches_tag(row, tag):
     if not tag:
@@ -2310,7 +2325,7 @@ def iter_csv_records(path):
 def export_filtered_csv(groups, artists=None, paintings_only=True,
                         subject_terms=None, object_terms=None, year_range=None,
                         region=None, medium=None, culture=None, tag=None,
-                        highlight_only=False):
+                        highlight_only=False, department=None):
     """Stream all matching original rows, retaining the original CSV columns."""
     artists = artists or []
     subject_terms = subject_terms or []
@@ -2331,7 +2346,7 @@ def export_filtered_csv(groups, artists=None, paintings_only=True,
             for row in reader:
                 if not matches_metadata(row, groups, artists, paintings_only,
                                         subject_terms, object_terms, year_range,
-                                        region, medium, culture, tag, highlight_only):
+                                        region, medium, culture, tag, highlight_only, department):
                     continue
                 oid = (row.get("Object ID") or "").strip()
                 if not oid.isdigit():
@@ -2350,7 +2365,7 @@ def export_filtered_csv(groups, artists=None, paintings_only=True,
 
 def matches_metadata(row, groups, artists, paintings_only, subject_terms,
                      object_terms, year_range, region, medium, culture,
-                     tag, highlight_only):
+                     tag, highlight_only, department=None):
     return (is_public_domain(row)
             and (not paintings_only or is_painting(row))
             and matches_artist(row, artists)
@@ -2361,6 +2376,7 @@ def matches_metadata(row, groups, artists, paintings_only, subject_terms,
             and matches_region(row, region)
             and matches_medium(row, medium)
             and matches_culture(row, culture)
+            and matches_department(row, department)
             and matches_tag(row, tag)
             and (not highlight_only or is_highlight(row)))
 
@@ -2377,7 +2393,8 @@ def choose_candidates(
     culture=None,
     tag=None,
     highlight_only=False,
-    source_csv=None
+    source_csv=None,
+    department=None
 ):
     artists = artists or []
     subject_terms = subject_terms or []
@@ -2390,7 +2407,7 @@ def choose_candidates(
         if source_csv is None and not matches_metadata(
                 row, groups, artists, paintings_only, subject_terms,
                 object_terms, year_range, region, medium, culture,
-                tag, highlight_only):
+                tag, highlight_only, department):
             continue
         oid = (row.get("Object ID") or "").strip()
         if not oid.isdigit():
@@ -2870,7 +2887,8 @@ def build_download_command(
     culture,
     tag,
     highlight_only,
-    target
+    target,
+    department=None
 ):
 
     script = Path(
@@ -2943,6 +2961,9 @@ def build_download_command(
             command_quote(culture),
         ])
 
+    if department:
+        parts.extend(["--department", command_quote(department)])
+
     if tag:
         parts.extend([
             "--tag",
@@ -2979,7 +3000,8 @@ def show_dry_run(
     tag,
     highlight_only,
     target,
-    match_count
+    match_count,
+    department=None
 ):
 
     print()
@@ -3074,6 +3096,8 @@ def show_dry_run(
         else "(any)"
     )
 
+    print("Department      :", department if department else "(any)")
+
     print(
         "Tag             :",
         tag
@@ -3133,7 +3157,8 @@ def show_dry_run(
         culture,
         tag,
         highlight_only,
-        target
+        target,
+        department
     )
 
     print()
@@ -3355,7 +3380,7 @@ def main():
             match_count = export_filtered_csv(
                 groups, artists, paintings_only, subject_terms, object_terms,
                 year_range, args.region, args.medium, args.culture, args.tag,
-                args.highlight
+                args.highlight, args.department
             )
             candidates = []
         else:
@@ -3371,7 +3396,8 @@ def main():
                 args.medium,
                 args.culture,
                 args.tag,
-                args.highlight
+                args.highlight,
+                department=args.department
             )
         )
 
@@ -3392,7 +3418,8 @@ def main():
                 args.tag,
                 args.highlight,
                 target,
-                match_count
+                match_count,
+                args.department
             )
 
             return 0
@@ -3575,6 +3602,11 @@ def main():
                 )
                 or
                 item["date"]
+            )
+
+            rec["medium"] = (
+                obj.get("medium")
+                or rec.get("medium", "")
             )
 
             rec["objectURL"] = (
