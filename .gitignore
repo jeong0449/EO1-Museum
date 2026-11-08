@@ -1,34 +1,37 @@
 # Downloaded original artwork
 original*/
 
-# Generated display images
+# Generated and resized display images
 display*/
 
-# The Met Open Access dataset
+# The Met Open Access dataset (downloaded separately)
 MetObjects.csv
 
-# Current exhibition metadata
+# Generated exhibition metadata
 met_metadata.json
-
+artwork_info.json
 metadata/*_downloaded.json
-
-# Local development archive
-archive/
 
 # Generated gallery image list
 images.js
 
-# Android Studio / Gradle
+# Met Highlights Manager: downloaded images, CSV snapshots, and manifests
+Met_highlights/
+
+# Local development archives and scratch files
+archive/
+scratch/
+
+# Temporary search results
+filtered.csv
+
+# Generated archives and video artwork
+*zip
+art/*.mp4
+
+# Android Studio / Gradle generated files
 .gradle/
 .idea/
 **/build/
 *.iml
 local.properties
-
-*zip
-
-art/*.mp4
-
-scratch/
-
-filtered.csv
