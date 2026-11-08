@@ -1,6 +1,12 @@
 package com.dan.eo1;
 
 import android.app.Activity;
+import android.content.Context;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.Random;
+import java.util.HashMap;
+import java.util.Map;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.graphics.Color;
@@ -131,6 +137,13 @@ public class MainActivity extends Activity {
     private ProgressBar progressBar;
     private TextView clockView;
     private TextView syncStatusView;
+    private TextView artworkInfoView;
+    private boolean artworkInfoVisible = false;
+    private final Random clockRandom = new Random();
+    private final Map<String, String> localArtworkInfo = new HashMap<String, String>();
+    private String currentArtworkInfo = "";
+    private static final String INFO_MANIFEST = "artwork_info.json";
+
 
     // ------------------------------------------------------------
     // Media
@@ -297,6 +310,7 @@ public class MainActivity extends Activity {
                     clockView.setText(
                             sdf.format(new Date())
                     );
+                    shiftClockPosition();
 
                     long now =
                             System.currentTimeMillis();
@@ -312,6 +326,93 @@ public class MainActivity extends Activity {
                     );
                 }
             };
+
+    // Artwork information: persistent ON/OFF state controlled only by left mouse click.
+    private void toggleArtworkInfo() {
+        artworkInfoVisible = !artworkInfoVisible;
+        getPreferences(Context.MODE_PRIVATE).edit()
+                .putBoolean("artwork_info_visible", artworkInfoVisible).apply();
+        refreshArtworkInfo();
+    }
+
+    private void refreshArtworkInfo() {
+        if (artworkInfoView == null) return;
+        boolean show = artworkInfoVisible && currentArtworkInfo != null
+                && currentArtworkInfo.trim().length() > 0;
+        artworkInfoView.setText(show ? currentArtworkInfo : "");
+        artworkInfoView.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) artworkInfoView.bringToFront();
+        if (clockVisible && clockView != null) clockView.bringToFront();
+    }
+
+    private void setArtworkInfo(String info) {
+        currentArtworkInfo = info == null ? "" : info;
+        refreshArtworkInfo();
+    }
+
+    private String formatArtworkInfo(JSONObject obj) {
+        if (obj == null) return "";
+        StringBuilder text = new StringBuilder();
+        String[] fields = {"title", "artist", "date", "medium", "institution"};
+        for (String field : fields) {
+            String value = obj.optString(field, "").trim();
+            if (value.length() == 0 || "null".equalsIgnoreCase(value)) continue;
+            value = android.text.Html.fromHtml(value).toString().trim();
+            if (value.length() == 0) continue;
+            if (text.length() > 0) text.append("\n");
+            text.append(value);
+        }
+        return text.toString();
+    }
+
+    private void loadLocalArtworkInfo() {
+        localArtworkInfo.clear();
+        File manifest = new File(MEDIA_DIR, INFO_MANIFEST);
+        if (!manifest.isFile() || manifest.length() > 1024 * 1024) return;
+        try {
+            StringBuilder data = new StringBuilder();
+            BufferedReader reader = new BufferedReader(new FileReader(manifest));
+            try {
+                String line;
+                while ((line = reader.readLine()) != null) data.append(line);
+            } finally { reader.close(); }
+            JSONArray records = new JSONArray(data.toString());
+            for (int i = 0; i < records.length(); i++) {
+                JSONObject item = records.optJSONObject(i);
+                if (item == null) continue;
+                String filename = item.optString("display", "");
+                if (filename.startsWith("display/")) {
+                    filename = filename.substring("display/".length());
+                    localArtworkInfo.put(filename, formatArtworkInfo(item));
+                }
+            }
+        } catch (Exception e) {
+            writeLog("Artwork info manifest error: " + e.getMessage());
+        }
+    }
+
+    private void shiftClockPosition() {
+        if (clockView == null || !clockVisible) return;
+        // Offset is bounded around the XML top-right anchor, not a random walk.
+        clockView.post(new Runnable() {
+            @Override public void run() {
+                if (!clockVisible) return;
+                float x = -clockRandom.nextInt(151);
+                float y = clockRandom.nextInt(121) - 60;
+                View parent = (View) clockView.getParent();
+                if (parent != null) {
+                    float left = clockView.getLeft();
+                    float top = clockView.getTop();
+                    x = Math.max(-left, Math.min(x,
+                            parent.getWidth() - clockView.getRight()));
+                    y = Math.max(-top, Math.min(y,
+                            parent.getHeight() - clockView.getBottom()));
+                }
+                clockView.setTranslationX(x);
+                clockView.setTranslationY(y);
+            }
+        });
+    }
 
     // ------------------------------------------------------------
     // State
@@ -387,12 +488,18 @@ public class MainActivity extends Activity {
                                 R.id.syncStatusView
                         );
 
+        artworkInfoView = (TextView) findViewById(R.id.artworkInfoView);
+        artworkInfoVisible = getPreferences(Context.MODE_PRIVATE)
+                .getBoolean("artwork_info_visible", false);
+        refreshArtworkInfo();
+
         startNewLog();
 
         writeLog("onCreate");
 
         loadConfig();
         recoverInterruptedGallerySwap();
+        recoverInterruptedArtworkSync();
 
         setupWebView();
         setupVideoView();
@@ -496,6 +603,27 @@ public class MainActivity extends Activity {
         }
 
         super.onDestroy();
+    }
+
+    // Restore any per-file backup left by an interrupted artwork install.
+    // Never touch the independent /art directory.
+    private void recoverInterruptedArtworkSync() {
+        File dir = new File(MEDIA_DIR);
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File backup : files) {
+            String name = backup.getName();
+            if (!name.endsWith(".syncbak")) continue;
+            String originalName = name.substring(0, name.length() - 8);
+            if (!(isSafeSyncFilename(originalName) || INFO_MANIFEST.equals(originalName))) continue;
+            File original = new File(dir, originalName);
+            if (original.exists()) {
+                // The replacement was installed; the backup is no longer needed.
+                if (!backup.delete()) writeLog("Old backup remains: " + name);
+            } else if (!backup.renameTo(original)) {
+                writeLog("SYNC RECOVERY REQUIRED: " + name);
+            }
+        }
     }
 
     private void recoverInterruptedGallerySwap() {
@@ -982,6 +1110,28 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------
 
     private class NetworkGalleryBridge {
+        @JavascriptInterface
+        public void networkConnectionFailed() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (currentMode != MODE_NETWORK) return;
+                    writeLog("Network Gallery server unavailable; switching to Internal Gallery");
+                    showLocalMode();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void showArtworkInfo(final String json) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (currentMode != MODE_NETWORK) return;
+                    try { setArtworkInfo(formatArtworkInfo(new JSONObject(json))); }
+                    catch (Exception e) { setArtworkInfo(""); }
+                }
+            });
+        }
+
 
         @JavascriptInterface
         public void playNetworkVideo(final String url) {
@@ -1057,6 +1207,7 @@ public class MainActivity extends Activity {
 
         videoView.setVisibility(View.VISIBLE);
         videoView.bringToFront();
+        refreshArtworkInfo();
 
         showProgress();
 
@@ -1108,6 +1259,7 @@ public class MainActivity extends Activity {
         if (currentMode == MODE_NETWORK) {
             webView.setVisibility(View.VISIBLE);
             webView.bringToFront();
+            refreshArtworkInfo();
 
             if (clockVisible && clockView != null) {
                 clockView.bringToFront();
@@ -1162,169 +1314,165 @@ public class MainActivity extends Activity {
     }
 
     private void syncNetworkGallery() {
-
         final String baseUrl = getNetworkGalleryUrl();
         writeLog("Safe Sync control check: " + baseUrl + "eo1-status");
-
+        File mediaDir = new File(MEDIA_DIR);
+        File work = new File(mediaDir.getParentFile(), "images_sync_work");
         try {
             String status = downloadText(baseUrl + "eo1-status");
             String[] lines = status.split("\\r?\\n");
             String serverId = lines.length > 0 ? lines[0].trim() : "";
             boolean syncRequested = false;
-
             for (String line : lines) {
-                if ("SYNC=1".equalsIgnoreCase(line.trim())) {
-                    syncRequested = true;
-                }
+                if ("SYNC=1".equalsIgnoreCase(line.trim())) syncRequested = true;
             }
-
-            if (trustedServer != null && trustedServer.length() > 0 &&
-                    !trustedServer.equals(serverId)) {
-                writeLog("Safe Sync refused: TRUSTED_SERVER mismatch: " + serverId);
-                showSyncMessage("Sync refused: untrusted server", 4000L);
+            // Never sync from an unknown server, even if .config omitted its ID.
+            if (!"EO1M-8F29C74A".equals(serverId) ||
+                    (trustedServer != null && trustedServer.length() > 0 &&
+                     !trustedServer.equals(serverId))) {
+                showSyncMessage("Sync refused: untrusted server", 5000L);
                 return;
             }
+            if (!syncRequested) return;
+            if (!mediaDir.exists() && !mediaDir.mkdirs())
+                throw new IOException("cannot create images directory");
+            if (work.exists() && !deleteFlatDirectory(work))
+                throw new IOException("cannot clear incomplete work directory");
+            if (!work.mkdir()) throw new IOException("cannot create work directory");
 
-            if (!syncRequested) {
-                writeLog("Safe Sync not requested by server");
-                return;
-            }
-
-            writeLog("Safe Sync start: " + baseUrl +
-                    " trusted=" + trustedServer);
-            showSyncMessage("Syncing...", 0L);
-
-            String js = downloadText(baseUrl + "images.js");
-            List<String> allDisplayPaths = parseAllDisplayPaths(js);
-            List<String> artworkPaths = parseArtworkPaths(allDisplayPaths);
-            Set<String> availablePaths = new HashSet<String>(allDisplayPaths);
-
-            if (artworkPaths.isEmpty()) {
-                writeLog("Safe Sync: images.js contains no base artwork images");
-                showSyncMessage("Sync stopped: no images", 4000L);
-                return;
-            }
-
-            int artworkLimit = Math.min(artworkPaths.size(), maxMediaFiles);
-            File mediaDir = new File(MEDIA_DIR);
-            if (!mediaDir.exists() && !mediaDir.mkdirs()) {
-                writeLog("Safe Sync: cannot create " + MEDIA_DIR);
-                showSyncMessage("Sync failed: storage unavailable", 5000L);
-                return;
-            }
-
-            // v0.44: stage the complete collection before touching the live one.
-            List<String> transferPaths = new ArrayList<String>();
+            // The PC gallery builder owns artwork_info.json. Never generate it
+            // from images.js on the EO1. Validate before touching any artwork.
+            String manifestText = downloadText(baseUrl + INFO_MANIFEST);
+            JSONArray manifest = new JSONArray(manifestText);
+            if (manifest.length() == 0) throw new IOException("empty artwork manifest");
+            int artworkLimit = Math.min(manifest.length(), maxMediaFiles);
+            List<List<String>> groups = new ArrayList<List<String>>();
+            Set<String> expectedNames = new HashSet<String>();
             for (int i = 0; i < artworkLimit; i++) {
-                String basePath = artworkPaths.get(i);
-                transferPaths.add(basePath);
-                String panJpg = makePanJpgPath(basePath);
-                if (availablePaths.contains(panJpg)) {
-                    transferPaths.add(panJpg);
-                    String panMp4 = replaceExtension(panJpg, ".mp4");
-                    if (remoteFileExists(baseUrl + panMp4)) transferPaths.add(panMp4);
+                JSONObject item = manifest.optJSONObject(i);
+                if (item == null) throw new IOException("invalid manifest record");
+                String display = item.optString("display", "");
+                if (!display.matches("display/[0-9]{4}\\.jpg"))
+                    throw new IOException("invalid display path: " + display);
+                List<String> group = new ArrayList<String>();
+                group.add(display);
+                String pan = item.optString("pan", "");
+                if (pan.length() > 0 && !"null".equals(pan)) {
+                    if (!pan.equals(makePanJpgPath(display)))
+                        throw new IOException("invalid pan path: " + pan);
+                    group.add(pan);
+                    String mp4 = replaceExtension(pan, ".mp4");
+                    if (remoteFileExists(baseUrl + mp4)) group.add(mp4);
                 }
-            }
-
-            Set<String> names = new HashSet<String>();
-            List<Long> sizes = new ArrayList<Long>();
-            long requiredBytes = 0L;
-            for (String path : transferPaths) {
-                String name = new File(path).getName();
-                if (!isSafeSyncFilename(name) || !names.add(name)) {
-                    showSyncMessage("Sync refused: invalid file list", 5000L);
-                    return;
-                }
-                long size = remoteFileLength(baseUrl + path);
-                if (size <= 0 || requiredBytes > Long.MAX_VALUE - size) {
-                    showSyncMessage("Sync refused: unknown file size", 5000L);
-                    return;
-                }
-                requiredBytes += size;
-                sizes.add(size);
-            }
-
-            File parent = mediaDir.getParentFile();
-            File stage = new File(parent, "images_new");
-            File backup = new File(parent, "images_old");
-            if (stage.exists() || backup.exists()) {
-                writeLog("Staged Sync refused: leftover images_new/images_old; manual inspection required");
-                showSyncMessage("Sync stopped: pending gallery recovery", 6000L);
-                return;
-            }
-            if (!mediaDir.exists() && !mediaDir.mkdirs()) {
-                showSyncMessage("Sync failed: storage unavailable", 5000L);
-                return;
-            }
-            long freeBytes = getAvailableBytes(mediaDir);
-            long reserveBytes = minFreeMb * 1024L * 1024L;
-            if (freeBytes < 0 || requiredBytes > freeBytes - reserveBytes) {
-                writeLog("Staged Sync refused: required=" + requiredBytes + " free=" + freeBytes);
-                showSyncMessage("Sync refused: insufficient storage", 6000L);
-                return;
-            }
-            if (!stage.mkdir()) {
-                showSyncMessage("Sync failed: cannot create staging directory", 5000L);
-                return;
-            }
-
-            boolean transferOk = false;
-            try {
-                for (int i = 0; i < transferPaths.size(); i++) {
-                    String path = transferPaths.get(i);
+                for (String path : group) {
                     String name = new File(path).getName();
-                    showSyncMessage("Syncing... " + (i + 1) + " / " + transferPaths.size(), 0L);
-                    if (!syncOneFile(baseUrl, path, stage)) {
-                        writeLog("Staged Sync failed: " + path);
-                        showSyncMessage("Sync failed: old gallery preserved", 6000L);
-                        return;
-                    }
-                    File downloaded = new File(stage, name);
-                    if (downloaded.length() != sizes.get(i)) {
-                        writeLog("Staged Sync size mismatch: " + name);
-                        showSyncMessage("Sync failed: size mismatch", 6000L);
-                        return;
-                    }
+                    if (!isSafeSyncFilename(name) || !expectedNames.add(name))
+                        throw new IOException("duplicate/invalid filename: " + name);
                 }
-                File[] stagedFiles = stage.listFiles();
-                if (stagedFiles == null || stagedFiles.length != transferPaths.size()) {
-                    showSyncMessage("Sync failed: verification error", 6000L);
-                    return;
+                groups.add(group);
+            }
+
+            // Each artwork is downloaded completely into the one-artwork work
+            // directory before any of its existing files are replaced.
+            for (int i = 0; i < groups.size(); i++) {
+                List<String> group = groups.get(i);
+                showSyncMessage("Syncing artwork... " + (i + 1) + " / " + groups.size(), 0L);
+                for (String path : group) {
+                    String name = new File(path).getName();
+                    long length = remoteFileLength(baseUrl + path);
+                    if (length <= 0) throw new IOException("unknown size: " + name);
+                    File staged = new File(work, name);
+                    if (!downloadFileSafely(baseUrl + path,
+                            new File(work, name + ".tmp"), staged, mediaDir) ||
+                            staged.length() != length)
+                        throw new IOException("download failed: " + name);
                 }
-                transferOk = true;
-            } finally {
-                if (!transferOk) {
-                    if (!deleteFlatDirectory(stage))
-                        writeLog("Staged Sync cleanup incomplete: " + stage);
+
+                // One-artwork transaction. Existing files remain intact if
+                // any member of the group fails to download or verify.
+                // Rename existing members to .bak before installing new ones;
+                // restore on an installation error. A power cut during these
+                // renames is recovered by recoverInterruptedArtworkSync().
+                List<File> backups = new ArrayList<File>();
+                List<File> installed = new ArrayList<File>();
+                try {
+                    for (String path : group) {
+                        String name = new File(path).getName();
+                        File target = new File(mediaDir, name);
+                        File backup = new File(mediaDir, name + ".syncbak");
+                        if (backup.exists()) throw new IOException("pending backup: " + name);
+                        if (target.exists()) {
+                            if (!target.renameTo(backup)) throw new IOException("backup failed: " + name);
+                            backups.add(backup);
+                        }
+                        if (!new File(work, name).renameTo(target))
+                            throw new IOException("install failed: " + name);
+                        installed.add(target);
+                    }
+                } catch (IOException installError) {
+                    for (File target : installed) target.delete();
+                    for (File backup : backups) {
+                        File target = new File(mediaDir,
+                                backup.getName().replace(".syncbak", ""));
+                        if (!backup.renameTo(target))
+                            writeLog("SYNC RECOVERY REQUIRED: " + backup.getName());
+                    }
+                    throw installError;
+                }
+                for (File backup : backups) if (!backup.delete())
+                    writeLog("Safe Sync backup cleanup pending: " + backup.getName());
+                // A new artwork may not have pan companions. Remove the old
+                // companions only after the new artwork group is installed.
+                String baseName = new File(group.get(0)).getName();
+                String panName = "pan_" + baseName;
+                for (String name : new String[] { panName,
+                        replaceExtension(panName, ".mp4") }) {
+                    if (!expectedNames.contains(name)) {
+                        File obsolete = new File(mediaDir, name);
+                        if (obsolete.exists() && !obsolete.delete())
+                            throw new IOException("obsolete companion cleanup failed: " + name);
+                    }
                 }
             }
 
-            // Directory renames are on the same filesystem. Keep the backup
-            // until the new gallery has successfully taken the live name.
-            showSyncMessage("Installing new collection...", 0L);
-            if (!mediaDir.renameTo(backup)) {
-                writeLog("Staged Sync: cannot rename live gallery to backup");
-                showSyncMessage("Sync failed: old gallery preserved", 6000L);
-                return;
+            // Publish metadata only after all requested artworks are installed.
+            JSONArray selected = new JSONArray();
+            for (int i = 0; i < artworkLimit; i++) selected.put(manifest.getJSONObject(i));
+            File manifestTmp = new File(work, INFO_MANIFEST);
+            FileWriter writer = new FileWriter(manifestTmp);
+            try { writer.write(selected.toString()); }
+            finally { writer.close(); }
+            File liveManifest = new File(mediaDir, INFO_MANIFEST);
+            File oldManifest = new File(mediaDir, INFO_MANIFEST + ".syncbak");
+            if (oldManifest.exists()) throw new IOException("pending manifest backup");
+            if (liveManifest.exists() && !liveManifest.renameTo(oldManifest))
+                throw new IOException("manifest backup failed");
+            if (!manifestTmp.renameTo(liveManifest)) {
+                if (oldManifest.exists() && !oldManifest.renameTo(liveManifest))
+                    writeLog("SYNC RECOVERY REQUIRED: manifest");
+                throw new IOException("manifest install failed");
             }
-            if (!stage.renameTo(mediaDir)) {
-                boolean restored = backup.renameTo(mediaDir);
-                writeLog("Staged Sync activation failed; restored=" + restored);
-                showSyncMessage(restored ? "Sync failed: old gallery restored" :
-                        "Sync error: recovery needed", 7000L);
-                return;
-            }
-            writeLog("Staged Sync activated: " + transferPaths.size() + " files");
-            if (!deleteFlatDirectory(backup)) {
-                writeLog("Staged Sync warning: backup cleanup incomplete");
-                showSyncMessage("Sync complete; old backup remains", 6000L);
-            } else {
-                showSyncMessage("Sync complete: " + artworkLimit + " artworks", 4000L);
-            }
+            if (oldManifest.exists() && !oldManifest.delete())
+                writeLog("Safe Sync manifest backup cleanup pending");
 
+            // Only after the complete collection succeeds: delete numbered
+            // artwork files not present in the new selected collection.
+            File[] existing = mediaDir.listFiles();
+            if (existing != null) for (File file : existing) {
+                String name = file.getName();
+                if (file.isFile() &&
+                        name.matches("(?:pan_)?[0-9]{4}\\.(?i:jpg|jpeg|png|mp4)") &&
+                        !expectedNames.contains(name) && !file.delete())
+                    writeLog("Safe Sync obsolete file not removed: " + name);
+            }
+            showSyncMessage("Sync complete: " + artworkLimit + " artworks", 4000L);
+            writeLog("Safe Sync complete: " + artworkLimit + " artworks");
         } catch (Exception e) {
-            writeLog("Safe Sync error: " + e.getMessage());
-            showSyncMessage("Sync error: " + e.getMessage(), 5000L);
+            writeLog("Safe Sync stopped (resume on next sync): " + e.getMessage());
+            showSyncMessage("Sync stopped: " + e.getMessage(), 6000L);
+        } finally {
+            if (work.exists() && !deleteFlatDirectory(work))
+                writeLog("Safe Sync work cleanup pending");
         }
     }
 
@@ -1729,6 +1877,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------
 
     private void showLocalMode() {
+        setArtworkInfo("");
 
         writeLog(
                 "showLocalMode"
@@ -1820,6 +1969,7 @@ public class MainActivity extends Activity {
     private void loadMediaList() {
 
         mediaFiles.clear();
+        loadLocalArtworkInfo();
 
         File dir = new File(MEDIA_DIR);
         if (!dir.exists() || !dir.isDirectory()) {
@@ -1876,6 +2026,7 @@ public class MainActivity extends Activity {
         }
 
         currentLocalBaseFile = mediaFiles.get(mediaIndex);
+        setArtworkInfo(localArtworkInfo.get(currentLocalBaseFile.getName()));
         writeLog("Showing local artwork: " + currentLocalBaseFile.getName());
         boolean hasPan = getLocalPanMp4(currentLocalBaseFile).isFile()
                 || getLocalPanJpg(currentLocalBaseFile).isFile();
@@ -1998,6 +2149,7 @@ public class MainActivity extends Activity {
 
         videoView.setVisibility(View.VISIBLE);
         videoView.bringToFront();
+        refreshArtworkInfo();
         showProgress();
 
         try {
@@ -2154,6 +2306,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------
 
     private void showArtMode() {
+        setArtworkInfo("");
 
         writeLog("showArtMode");
 
@@ -2251,6 +2404,7 @@ public class MainActivity extends Activity {
 
         File file = artFiles.get(artIndex);
         currentArtFileName = file.getName();
+        setArtworkInfo("");
         writeLog("Playing Art MP4: " + file.getName());
 
         handler.removeCallbacks(nextImageRunnable);
@@ -2288,6 +2442,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------
 
     private void showNetworkMode() {
+        setArtworkInfo("");
 
         writeLog(
                 "showNetworkMode"
@@ -2343,6 +2498,7 @@ public class MainActivity extends Activity {
         webView.setVisibility(
                 View.VISIBLE
         );
+        refreshArtworkInfo();
 
         showProgress();
 
@@ -3072,6 +3228,7 @@ public class MainActivity extends Activity {
                                 toggleClock();
 
                                 break;
+
                         }
                     }
                 }
@@ -3166,6 +3323,16 @@ public class MainActivity extends Activity {
         return true;
     }
 
+    private boolean handleLeftClick(MotionEvent event) {
+        if (!isMouseEvent(event) || event.getActionMasked() != MotionEvent.ACTION_UP)
+            return false;
+        if ((event.getButtonState() & MotionEvent.BUTTON_SECONDARY) != 0)
+            return false;
+        if (controlDialog != null && controlDialog.isShowing()) return false;
+        toggleArtworkInfo();
+        return true;
+    }
+
     @Override
     public boolean dispatchTouchEvent(
             MotionEvent event) {
@@ -3182,6 +3349,7 @@ public class MainActivity extends Activity {
             return true;
         }
 
+        if (handleLeftClick(event)) return true;
         return super.dispatchTouchEvent(
                 event
         );

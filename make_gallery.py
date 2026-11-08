@@ -67,6 +67,18 @@ DST.mkdir(exist_ok=True)
 # Find all source images
 # ============================================================
 
+# Optional Met metadata. Matching is by the ORIGINAL filename, never
+# by the index of a sorted list. Other sources remain fully supported.
+metadata_by_file = {}
+metadata_path = ROOT / "met_metadata.json"
+if metadata_path.is_file():
+    try:
+        for entry in json.loads(metadata_path.read_text(encoding="utf-8")):
+            if isinstance(entry, dict) and entry.get("file"):
+                metadata_by_file[Path(entry["file"]).name] = entry
+    except (ValueError, OSError) as exc:
+        print(f"WARNING: cannot load Met metadata: {exc}")
+
 files = sorted(
     p for p in SRC.iterdir()
     if p.is_file()
@@ -266,14 +278,22 @@ for n, src in enumerate(files, 1):
         #   "pan": "display/pan_0002.jpg"
         # }
 
-        made.append(
-            {
-                "display": (
-                    "display/" + outname
-                ),
-                "pan": pan_path
-            }
-        )
+        item = {
+            "display": "display/" + outname,
+            "pan": pan_path,
+        }
+        source_metadata = metadata_by_file.get(src.name)
+        if source_metadata:
+            for source_key, dest_key in (
+                ("title", "title"),
+                ("artist", "artist"),
+                ("date", "date"),
+                ("medium", "medium"),
+            ):
+                if source_metadata.get(source_key):
+                    item[dest_key] = str(source_metadata[source_key])
+            item["institution"] = "The Metropolitan Museum of Art"
+        made.append(item)
 
 
         if pan_path:
@@ -322,6 +342,17 @@ js = (
     encoding="utf-8"
 )
 
+# ============================================================
+# Write artwork_info.json for EO1 Internal Gallery / Safe Sync
+# ============================================================
+# Use the exact same records and ordering as images.js.
+# This is a JSON array, as expected by MainActivity.java.
+manifest_path = ROOT / "artwork_info.json"
+manifest_path.write_text(
+    json.dumps(made, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8"
+)
+
 
 # ============================================================
 # Summary
@@ -362,6 +393,8 @@ print(
     f"Gallery list  : "
     f"{ROOT / 'images.js'}"
 )
+
+print(f"Artwork info   : {manifest_path}")
 
 
 if len(made) != len(files):

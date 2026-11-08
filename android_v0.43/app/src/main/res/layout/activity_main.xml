@@ -64,6 +64,22 @@
         android:visibility="gone" />
 
     <TextView
+        android:id="@+id/artworkInfoView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#BF000000"
+        android:textColor="#FFFFFFFF"
+        android:textSize="24sp"
+        android:paddingLeft="28dp"
+        android:paddingRight="28dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="18dp"
+        android:maxLines="8"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <TextView
         android:id="@+id/clockView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

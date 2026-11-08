@@ -105,6 +105,24 @@ body {
     display: none;
 }
 
+#connectionStatus {
+    display: none;
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    bottom: 9%;
+    z-index: 20;
+    box-sizing: border-box;
+    padding: 18px 22px;
+    background: rgba(25, 28, 33, 0.92);
+    color: #fff;
+    font: 22px sans-serif;
+    text-align: center;
+    line-height: 1.5;
+    border-radius: 6px;
+    pointer-events: none;
+}
+
 </style>
 </head>
 
@@ -129,6 +147,8 @@ body {
         class="detail"
         alt=""
     >
+
+    <div id="connectionStatus" aria-live="polite"></div>
 
     <video
         id="panVideo"
@@ -197,6 +217,89 @@ body {
             "panVideo"
         );
 
+
+    /*
+     * Connection watchdog (Android 4.4-compatible XMLHttpRequest).
+     * Poll every 2 seconds. On a confirmed outage, retry 5 times
+     * at 2-second intervals, then ask the native app to switch
+     * to Internal Gallery. No server-side changes are needed.
+     */
+    var connectionStatus = document.getElementById("connectionStatus");
+    var failedChecks = 0;
+    var connectionLost = false;
+    var probeInProgress = false;
+    var probeTimer = null;
+    var requestTimeoutTimer = null;
+
+    function statusText(message) {
+        connectionStatus.textContent = message;
+        connectionStatus.style.display = message ? "block" : "none";
+    }
+
+    function probeServer() {
+        if (probeInProgress) return;
+        probeInProgress = true;
+        var xhr = new XMLHttpRequest();
+        var finished = false;
+        function done(ok) {
+            if (finished) return;
+            finished = true;
+            probeInProgress = false;
+            clearTimeout(requestTimeoutTimer);
+            if (ok) {
+                failedChecks = 0;
+                if (connectionLost) {
+                    statusText("PC Gallery reconnected. Reloading...");
+                    window.location.reload();
+                }
+                return;
+            }
+            if (!connectionLost) {
+                connectionLost = true;
+                // Stop the slideshow before its next transition.
+                if (timerId !== null) {
+                    clearTimeout(timerId);
+                    timerId = null;
+                }
+            }
+            failedChecks++;
+            if (failedChecks >= 5) {
+                statusText("PC Gallery unavailable. Switching to Internal Gallery...");
+                clearInterval(probeTimer);
+                if (window.EO1 &&
+                    typeof window.EO1.networkConnectionFailed === "function") {
+                    window.EO1.networkConnectionFailed();
+                } else {
+                    statusText("PC Gallery unavailable. Select Internal Gallery from the menu.");
+                }
+            } else {
+                statusText("PC Gallery connection lost. Reconnecting... (" +
+                    failedChecks + "/5)");
+            }
+        }
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                // Verify the actual EO1 server identity, not just HTTP 200.
+                done(xhr.status === 200 &&
+                    /^EO1M-[^\r\n]+[\r\n]+SYNC=[01]/.test(xhr.responseText));
+            }
+        };
+        xhr.onerror = function() { done(false); };
+        requestTimeoutTimer = setTimeout(function() {
+            try { xhr.abort(); } catch (e) {}
+            done(false);
+        }, 1500);
+        try {
+            xhr.open("GET", "eo1-status?watch=" + new Date().getTime(), true);
+            xhr.send(null);
+        } catch (e) {
+            done(false);
+        }
+    }
+
+    // Initial check and regular connection monitoring.
+    probeServer();
+    probeTimer = setInterval(probeServer, 2000);
 
     /*
      * ============================================================
@@ -467,8 +570,14 @@ body {
         pos++;
 
 
+        if (connectionLost) return;
+
         resetLayers();
 
+        if (window.EO1 && typeof window.EO1.showArtworkInfo === "function") {
+            try { window.EO1.showArtworkInfo(JSON.stringify(item)); }
+            catch (e) { console.log("Artwork info bridge error", e); }
+        }
 
         var cacheBust =
             "?v=" +
@@ -479,6 +588,11 @@ body {
          * Do not show the new image until it has
          * actually finished loading.
          */
+
+        photo.onerror = function () {
+            photo.onerror = null;
+            probeServer();
+        };
 
         photo.onload =
             function () {
@@ -563,6 +677,7 @@ body {
      */
 
     function fadeNormalToNext() {
+        if (connectionLost) return;
 
         photo.style.transition =
             "opacity " +
@@ -1324,6 +1439,7 @@ body {
      */
 
     function finishWideArtwork() {
+        if (connectionLost) return;
 
         photo.style.transition =
             "opacity " +
