@@ -20,11 +20,14 @@ from PIL import Image
 # ============================================================
 
 SCRIPT_NAME = "The Met Gallery Downloader"
-VERSION = "4.4"
+VERSION = "4.5"
 EDITION = "CLI + Advanced Curation Filters + Diagnostic Edition"
-BUILD_DATE = "2026-11-08"
+BUILD_DATE = "2026-11-09"
 
 # Version history
+# v4.5
+#   - Added offline --local selection from Met_highlights metadata and images.
+#   - Reject incompatible options and preserve existing online behavior.
 # v4.4
 #   - Added --department exact Department-field filter (comma-separated OR).
 # v4.3
@@ -103,6 +106,7 @@ FILTERED_CSV = ROOT / "filtered.csv"
 ORIGINAL = ROOT / "original"
 META = ROOT / "met_metadata.json"
 ARCHIVE = ROOT / "archive"
+HIGHLIGHTS = ROOT / "Met_highlights"
 
 CSV_URL = (
     "https://media.githubusercontent.com/media/"
@@ -724,6 +728,11 @@ def build_parser():
         "--archive",
         action="store_true",
         help="archive current collection and exit without other operations",
+    )
+
+    parser.add_argument(
+        "--local", action="store_true",
+        help="use local Met_highlights CSV, manifest, and images (offline)",
     )
 
     parser.add_argument(
@@ -3170,6 +3179,183 @@ def show_dry_run(
     print()
 
 
+
+# ============================================================
+# Offline Met Highlights selection
+# ============================================================
+
+def local_highlights_files():
+    snapshots = sorted(HIGHLIGHTS.glob("Met_highlights_public_domain_*.csv"))
+    if not snapshots:
+        raise FileNotFoundError("No highlight snapshot in %s" % HIGHLIGHTS)
+    manifest_path = HIGHLIGHTS / "download_manifest.csv"
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Missing local manifest: %s" % manifest_path)
+    return snapshots[-1], manifest_path
+
+
+def load_local_images(manifest_path):
+    """Object ID -> existing image, using only successful manifest entries."""
+    available = {}
+    images_dir = (HIGHLIGHTS / "images").resolve()
+    with open(manifest_path, encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"Object ID", "Status", "Filename"}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError("Manifest lacks required columns: %s" % sorted(required))
+        for row in reader:
+            if (row.get("Status") or "").strip().lower() != "downloaded":
+                continue
+            oid = (row.get("Object ID") or "").strip()
+            name = (row.get("Filename") or "").strip()
+            if not oid.isdigit() or not name or Path(name).name != name:
+                continue
+            path = (images_dir / name).resolve()
+            if path.parent != images_dir or not path.is_file() or path.stat().st_size == 0:
+                continue
+            available[int(oid)] = path
+    return available
+
+
+def run_local(args, parser):
+    """Search local highlight metadata and copy cached images without network calls."""
+    if args.filter is not None:
+        parser.error("--local cannot be combined with --filter")
+    if args.diagnose is not None or args.check_api:
+        parser.error("--local cannot be combined with --diagnose or --check-api")
+    if args.archive:
+        parser.error("--local cannot be combined with standalone --archive")
+    if args.collection_type == "painting" and args.object_type not in (None, "any"):
+        parser.error("--object requires --type all (or omit --type) in local mode")
+    if args.target is not None and args.target <= 0:
+        parser.error("--target must be greater than zero")
+    try:
+        year_range = parse_year_filter(args.year)
+    except ValueError as exc:
+        parser.error(str(exc))
+    collection_type = args.collection_type or "all"
+    paintings_only = collection_type == "painting"
+    object_type = args.object_type or "any"
+    object_terms = [] if paintings_only else OBJECT_FILTERS[object_type][1]
+    subject_choices = parse_subject_choices(args.subject or "1")
+    subject_labels, subject_terms = get_subject_info(subject_choices)
+    color_only = args.color_only if args.color_only is not None else False
+    artist = args.artist or ""
+    query = args.query or ""
+    artists = parse_artist_filter(artist)
+    groups = parse_query(query)
+    target = args.target if args.target is not None else DEFAULT_TARGET
+
+    try:
+        snapshot, manifest_path = local_highlights_files()
+        available = load_local_images(manifest_path)
+    except (OSError, ValueError) as exc:
+        print("ERROR:", exc)
+        return 1
+
+    print("Local mode (offline)")
+    print("Metadata:", snapshot)
+    print("Manifest:", manifest_path)
+    print("Cached images found:", len(available))
+
+    matches = []
+    with open(snapshot, encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames or "Object ID" not in reader.fieldnames:
+            print("ERROR: Highlight snapshot has no Object ID column")
+            return 1
+        fieldnames = reader.fieldnames
+        for row in reader:
+            oid = (row.get("Object ID") or "").strip()
+            if not oid.isdigit() or int(oid) not in available:
+                continue
+            if matches_metadata(row, groups, artists, paintings_only,
+                                subject_terms, object_terms, year_range,
+                                args.region, args.medium, args.culture,
+                                args.tag, args.highlight, args.department):
+                matches.append(row)
+
+    print("Matching cached artworks:", len(matches))
+    if args.dry_run:
+        temporary = FILTERED_CSV.with_name(FILTERED_CSV.name + ".tmp")
+        try:
+            with open(temporary, "w", encoding="utf-8", newline="") as f:
+                f.write("# Generated: %s\n" % datetime.now().astimezone().isoformat(timespec="seconds"))
+                f.write("# Command: %s\n" % shlex.join(sys.argv))
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(matches)
+            os.replace(str(temporary), str(FILTERED_CSV))
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        print("Saved all matching cached records to:", FILTERED_CSV)
+        if color_only:
+            print("NOTE: --color is not evaluated during dry-run.")
+        print("No artwork collection files were changed.")
+        return 0
+
+    if not matches:
+        print("No matching cached artworks.")
+        return 2
+    random.shuffle(matches)
+    add_mode = prepare_collection()
+    if add_mode is None:
+        return 1
+    saved = []
+    if add_mode and META.exists():
+        try:
+            old = json.loads(META.read_text(encoding="utf-8"))
+            if isinstance(old, list):
+                saved = old
+        except (OSError, ValueError):
+            pass
+    existing_ids = {str(r.get("objectID")) for r in saved if isinstance(r, dict)}
+    added = 0
+    failures = 0
+    color_skips = 0
+    for row in matches:
+        if added >= target:
+            break
+        oid = int(row["Object ID"])
+        if str(oid) in existing_ids:
+            continue
+        src = available[oid]
+        suffix = src.suffix.lower()
+        out = ORIGINAL / ("met_%06d%s" % (oid, suffix))
+        try:
+            # Evaluate color before copying, so a rejected file never changes original/.
+            if color_only and not is_color_image(src):
+                color_skips += 1
+                continue
+            if not out.exists() or out.stat().st_size != src.stat().st_size:
+                shutil.copy2(src, out)
+            rec = {
+                "objectID": oid,
+                "title": row.get("Title") or "",
+                "artist": row.get("Artist Display Name") or "",
+                "date": row.get("Object Date") or "",
+                "medium": row.get("Medium") or "",
+                "objectURL": row.get("Link Resource") or "",
+                "file": out.name,
+            }
+            saved.append(rec)
+            existing_ids.add(str(oid))
+            added += 1
+            print("[%3d/%d] %s - %s" % (added, target, rec["artist"] or "Unknown", rec["title"] or "Untitled"))
+        except (OSError, ValueError) as exc:
+            failures += 1
+            print("  Skip %s: %s" % (oid, exc))
+    META.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("Added this run:", added)
+    print("Total images in metadata:", len(saved))
+    print("Failures:", failures)
+    if color_only:
+        print("Skipped by color filter:", color_skips)
+    print("Run make_gallery.py to rebuild the EO1 display collection.")
+    return 0
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -3178,6 +3364,9 @@ def main():
 
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.local:
+        return run_local(args, parser)
 
     if args.archive:
         if not ORIGINAL.exists() and not META.exists():
